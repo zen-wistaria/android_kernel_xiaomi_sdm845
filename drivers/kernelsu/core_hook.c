@@ -53,7 +53,7 @@
 #ifdef CONFIG_KSU_SUSFS
 bool susfs_is_allow_su(void)
 {
-	if (is_manager()) {
+	if (ksu_is_manager()) {
 		// we are manager, allow!
 		return true;
 	}
@@ -124,7 +124,7 @@ extern void ksu_sucompat_exit();
 
 static inline bool is_allow_su()
 {
-	if (is_manager()) {
+	if (ksu_is_manager()) {
 		// we are manager, allow!
 		return true;
 	}
@@ -492,7 +492,7 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
 		if (!from_root) {
 			return 0;
 		}
-		if (!ksu_handle_sepolicy(arg3, arg4)) {
+		if (!handle_sepolicy(arg3, arg4)) {
 			if (copy_to_user(result, &reply_ok, sizeof(reply_ok))) {
 				pr_err("sepolicy: prctl reply error\n");
 			}
