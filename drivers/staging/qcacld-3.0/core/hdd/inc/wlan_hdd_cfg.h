@@ -231,7 +231,7 @@ struct hdd_context;
 #define CFG_11D_SUPPORT_ENABLED_NAME           "g11dSupportEnabled"
 #define CFG_11D_SUPPORT_ENABLED_MIN            WNI_CFG_11D_ENABLED_STAMIN
 #define CFG_11D_SUPPORT_ENABLED_MAX            WNI_CFG_11D_ENABLED_STAMAX
-#define CFG_11D_SUPPORT_ENABLED_DEFAULT        WNI_CFG_11D_ENABLED_STADEF       /* Default is ON */
+#define CFG_11D_SUPPORT_ENABLED_DEFAULT        0       /* Default is OFF */
 
 /*
  * <ini>
