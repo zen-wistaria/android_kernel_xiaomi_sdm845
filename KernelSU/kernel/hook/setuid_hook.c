@@ -24,6 +24,10 @@
 #ifdef CONFIG_KSU_TRACEPOINT_HOOK
 #include "hook/tp_marker.h"
 #endif
+
+#ifdef CONFIG_KSU_SUSFS
+#include <linux/susfs_def.h>
+#endif
 #include "compat/kernel_compat.h"
 #include "feature/kernel_umount.h"
 #include "feature/sucompat.h"
@@ -115,32 +119,42 @@ int ksu_handle_setuid(uid_t new_uid, uid_t old_uid)
 #else
         ksu_clear_current_proc_unprivillege();
 #endif
-    } else {
+	} else {
 #ifdef CONFIG_KSU_TRACEPOINT_HOOK
-        ksu_clear_task_tracepoint_flag_if_needed(current);
+		ksu_clear_task_tracepoint_flag_if_needed(current);
 #else
-        ksu_set_current_proc_unprivillege();
+		ksu_set_current_proc_unprivillege();
 #endif
-    }
+#ifdef CONFIG_KSU_SUSFS
+		task_lock(current);
+		current->susfs_task_state |= TASK_STRUCT_NON_ROOT_USER_APP_PROC;
+		task_unlock(current);
+#endif
+	}
 
 #else // #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
-    if (ksu_is_allow_uid_for_current(new_uid)) {
-        disable_seccomp();
+	if (ksu_is_allow_uid_for_current(new_uid)) {
+		disable_seccomp();
 #ifndef CONFIG_KSU_TRACEPOINT_HOOK
-        ksu_clear_current_proc_unprivillege();
+		ksu_clear_current_proc_unprivillege();
 #endif
 
-        if (ksu_is_manager_uid(new_uid)) {
-            pr_info("install fd for ksu manager(uid=%d)\n", new_uid);
-            ksu_mark_manager(new_uid);
-            ksu_set_ksud_status(new_uid);
-            ksu_install_fd();
-        }
+		if (ksu_is_manager_uid(new_uid)) {
+			pr_info("install fd for ksu manager(uid=%d)\n", new_uid);
+			ksu_mark_manager(new_uid);
+			ksu_set_ksud_status(new_uid);
+			ksu_install_fd();
+		}
 
-        return 0;
-    } else {
-        ksu_set_current_proc_unprivillege();
-    }
+		return 0;
+	} else {
+		ksu_set_current_proc_unprivillege();
+#ifdef CONFIG_KSU_SUSFS
+		task_lock(current);
+		current->susfs_task_state |= TASK_STRUCT_NON_ROOT_USER_APP_PROC;
+		task_unlock(current);
+#endif
+	}
 #endif // #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
 
     // Handle kernel umount
