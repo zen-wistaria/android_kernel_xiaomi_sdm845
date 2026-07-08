@@ -252,9 +252,13 @@ dtb-$(CONFIG_ARCH_SDM845) += sdm845-sim.dtb \
 	sdm845-v2-cdp.dtb \
 	sdm845-qrd.dtb \
 	sdm845-v2-qrd.dtb \
+	sdm845-v2-qvr-evt.dtb \
+	sdm845-v2-qvr-dvt.dtb \
 	sdm845-4k-panel-mtp.dtb \
 	sdm845-4k-panel-cdp.dtb \
 	sdm845-4k-panel-qrd.dtb \
+	sdm845-interposer-sdm670-mtp.dtb \
+	sdm845-interposer-sdm670-cdp.dtb \
 	sdm845-v2.1-rb3.dtb \
 	sdm845-v2.1-mtp.dtb
 endif
