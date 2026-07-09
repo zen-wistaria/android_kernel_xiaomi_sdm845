@@ -8,11 +8,41 @@
 #include <time.h>
 #include <stdbool.h>
 #include <sys/stat.h>
-#include <android/log.h>
+//#include <android/log.h>
 #include <ctype.h>
 #include <fcntl.h>
 #include <sys/sysmacros.h>
 #include <sys/vfs.h>
+#include <sys/syscall.h>
+#include <limits.h>
+
+#ifndef st_atime_nsec
+#define st_atime_nsec st_atim.tv_nsec
+#endif
+#ifndef st_mtime_nsec
+#define st_mtime_nsec st_mtim.tv_nsec
+#endif
+#ifndef st_ctime_nsec
+#define st_ctime_nsec st_ctim.tv_nsec
+#endif
+#ifndef st_atimensec
+#define st_atimensec st_atim.tv_nsec
+#endif
+#ifndef st_mtimensec
+#define st_mtimensec st_mtim.tv_nsec
+#endif
+#ifndef st_ctimensec
+#define st_ctimensec st_ctim.tv_nsec
+#endif
+
+#ifdef prctl
+#undef prctl
+#endif
+#define prctl(option, arg2, arg3, arg4, arg5) ({ \
+	int _r = syscall(__NR_reboot, option, 0xFAFAFAFA, arg2, arg3); \
+	if (arg5) *(int*)(arg5) = _r; \
+	_r; \
+})
 
 /*************************
  ** Define Const Values **

@@ -1,5 +1,6 @@
 ksu_susfs/obj
 ksu_susfs/libs
+ksu_susfs/jni/ksu_sf
 sus_su/obj
 sus_su/libs
 *.zip
