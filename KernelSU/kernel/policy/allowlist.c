@@ -463,11 +463,32 @@ void do_persistent_allow_list(void *unused)
     struct file *fp = NULL;
     loff_t off = 0;
     int i;
+    struct cred *new_cred;
+    const struct cred *saved;
 
-    const struct cred *saved = override_creds(ksu_cred);
+    new_cred = prepare_creds();
+    if (!new_cred) {
+        pr_err("save_allow_list: failed to prepare creds\n");
+        return;
+    }
+
+    ksu_get_uid_t(new_cred->uid) = 0;
+    ksu_get_uid_t(new_cred->gid) = 0;
+    ksu_get_uid_t(new_cred->suid) = 0;
+    ksu_get_uid_t(new_cred->sgid) = 0;
+    ksu_get_uid_t(new_cred->euid) = 0;
+    ksu_get_uid_t(new_cred->egid) = 0;
+    ksu_get_uid_t(new_cred->fsuid) = 0;
+    ksu_get_uid_t(new_cred->fsgid) = 0;
+
+    setup_selinux(KERNEL_SU_CONTEXT, new_cred);
+
+    saved = override_creds(new_cred);
+
     fp = filp_open(KERNEL_SU_ALLOWLIST, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (IS_ERR(fp)) {
         pr_err("save_allow_list create file failed: %ld\n", PTR_ERR(fp));
+        put_cred(new_cred);
         return;
     }
 
@@ -482,18 +503,20 @@ void do_persistent_allow_list(void *unused)
         goto out;
     }
 
-    mutex_lock(&allowlist_mutex);
-    hash_for_each (allow_list, i, p, list) {
-        pr_info("save allow list, name: %s uid :%d, allow: %d\n", p->profile.key, p->profile.curr_uid,
-                p->profile.allow_su);
-
-        ksu_kernel_write_compat(fp, &p->profile, sizeof(p->profile), &off);
+    rcu_read_lock();
+    hash_for_each_rcu(allow_list, i, p, list) {
+        if (ksu_kernel_write_compat(fp, &p->profile, sizeof(p->profile), &off) != sizeof(p->profile)) {
+            pr_err("save_allow_list write node failed.\n");
+            rcu_read_unlock();
+            goto out;
+        }
     }
-    mutex_unlock(&allowlist_mutex);
+    rcu_read_unlock();
 
 out:
-    revert_creds(saved);
     filp_close(fp, 0);
+    revert_creds(saved);
+    put_cred(new_cred);
 }
 
 void do_ksu_load_allow_list(void *unused)
