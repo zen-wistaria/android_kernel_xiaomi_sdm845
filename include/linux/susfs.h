@@ -63,10 +63,10 @@ struct st_susfs_sus_kstat {
 	unsigned int            spoofed_nlink;
 	long long               spoofed_size;
 	long                    spoofed_atime_tv_sec;
-	long                    spoofed_mtime_tv_sec;
-	long                    spoofed_ctime_tv_sec;
 	long                    spoofed_atime_tv_nsec;
+	long                    spoofed_mtime_tv_sec;
 	long                    spoofed_mtime_tv_nsec;
+	long                    spoofed_ctime_tv_sec;
 	long                    spoofed_ctime_tv_nsec;
 	unsigned long           spoofed_blksize;
 	unsigned long long      spoofed_blocks;

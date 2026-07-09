@@ -43,6 +43,18 @@ dump_boot; # use split_boot to skip ramdisk unpack, e.g. for devices with init_b
 
 ui_print " -> Repacking and writing new boot image...";
 write_boot; # use flash_boot to skip ramdisk repack, e.g. for devices with init_boot ramdisk
+
+# Copy ksu_sf to /data/adb/ksu/bin/
+mount /data 2>/dev/null;
+mount -o rw,remount /data 2>/dev/null;
+if [ -d /data/adb/ksu/bin ]; then
+  ui_print " -> Installing ksu_sf to /data/adb/ksu/bin/...";
+  cp $home/ksu_sf /data/adb/ksu/bin/ksu_sf;
+  chmod 755 /data/adb/ksu/bin/ksu_sf;
+  chown 0:0 /data/adb/ksu/bin/ksu_sf;
+else
+  ui_print " -> /data/adb/ksu/bin not found, skipping ksu_sf installation.";
+fi
 ## end boot install
 
 

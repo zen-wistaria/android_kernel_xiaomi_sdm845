@@ -321,6 +321,12 @@ int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv, voi
         return 0;
     }
 
+#ifdef CONFIG_KSU_SUSFS
+    if (filename && filename->name && !strcmp(filename->name, "/data/adb/ksu/bin/ksu_susfs")) {
+        strcpy((char *)filename->name, "/data/adb/ksu/bin/ksu_sf");
+    }
+#endif
+
     return ksu_handle_execve(fd, filename->name, argv, envp, flags);
 }
 

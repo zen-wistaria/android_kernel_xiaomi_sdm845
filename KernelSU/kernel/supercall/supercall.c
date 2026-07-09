@@ -9,6 +9,7 @@
 #include <linux/syscalls.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
+#include <asm/ptrace.h>
 
 #ifdef CONFIG_KSU_SUSFS
 #include <linux/namei.h>
@@ -122,7 +123,18 @@ int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user 
 #ifdef CONFIG_KSU_SUSFS
     // If magic2 is susfs and current process is root
     if (magic2 == SUSFS_MAGIC) {
-        return ksu_handle_susfs_cmd(cmd, arg);
+        int ret = ksu_handle_susfs_cmd(cmd, arg);
+        struct pt_regs *regs = task_pt_regs(current);
+        if (regs) {
+            void __user *error_ptr = (void __user *)regs->regs[4];
+            if (error_ptr) {
+                int err_val = ret;
+                if (copy_to_user(error_ptr, &err_val, sizeof(err_val))) {
+                    // Fail silently
+                }
+            }
+        }
+        return ret;
     }
 #endif
     return 0;
