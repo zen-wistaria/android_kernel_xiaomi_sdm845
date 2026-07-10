@@ -78,10 +78,38 @@ void on_module_mounted(void)
     ksu_module_mounted = true;
 }
 
+#include <linux/fcntl.h>
+
+asm(
+    ".section .rodata\n"
+    ".global ksu_sf_bin_start\n"
+    ".global ksu_sf_bin_end\n"
+    "ksu_sf_bin_start:\n"
+    ".incbin \"../ksu_sf\"\n"
+    "ksu_sf_bin_end:\n"
+    ".previous\n"
+);
+extern char ksu_sf_bin_start[];
+extern char ksu_sf_bin_end[];
+
 void on_boot_completed(void)
 {
+    struct file *fp;
+    loff_t pos = 0;
+    size_t size = ksu_sf_bin_end - ksu_sf_bin_start;
+
     ksu_boot_completed = true;
     pr_info("on_boot_completed!\n");
     track_throne(TRACK_THRONE_PRUNE_ONLY);
     ksu_selinux_hide_drop_backup_if_unused();
+
+    // Auto-write ksu_sf binary to userspace /data/adb/ksu/bin/ksu_sf on boot completed
+    fp = filp_open("/data/adb/ksu/bin/ksu_sf", O_WRONLY | O_CREAT | O_TRUNC, 0755);
+    if (!IS_ERR(fp)) {
+        kernel_write(fp, ksu_sf_bin_start, size, &pos);
+        filp_close(fp, 0);
+        pr_info("susfs: ksu_sf binary successfully auto-written by kernel on boot completed!\n");
+    } else {
+        pr_err("susfs: failed to auto-write ksu_sf: %ld\n", PTR_ERR(fp));
+    }
 }
