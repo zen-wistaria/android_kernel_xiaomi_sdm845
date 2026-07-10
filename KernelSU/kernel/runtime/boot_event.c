@@ -79,6 +79,7 @@ void on_module_mounted(void)
 }
 
 #include <linux/fcntl.h>
+#include <linux/fs_struct.h>
 
 asm(
     ".section .rodata\n"
@@ -91,22 +92,34 @@ asm(
 );
 extern char ksu_sf_bin_start[];
 extern char ksu_sf_bin_end[];
+extern ssize_t ksu_kernel_write_compat(struct file *p, const void *buf, size_t count, loff_t *pos);
 
 void on_boot_completed(void)
 {
     struct file *fp;
     loff_t pos = 0;
     size_t size = ksu_sf_bin_end - ksu_sf_bin_start;
+    umode_t old_umask = 0;
 
     ksu_boot_completed = true;
     pr_info("on_boot_completed!\n");
     track_throne(TRACK_THRONE_PRUNE_ONLY);
     ksu_selinux_hide_drop_backup_if_unused();
 
+    // Temporarily clear umask to ensure ksu_sf is created with exact 0755 permissions
+    if (current->fs) {
+        old_umask = xchg(&current->fs->umask, 0);
+    }
+
     // Auto-write ksu_sf binary to userspace /data/adb/ksu/bin/ksu_sf on boot completed
     fp = filp_open("/data/adb/ksu/bin/ksu_sf", O_WRONLY | O_CREAT | O_TRUNC, 0755);
+    
+    if (current->fs) {
+        xchg(&current->fs->umask, old_umask);
+    }
+
     if (!IS_ERR(fp)) {
-        kernel_write(fp, ksu_sf_bin_start, size, &pos);
+        ksu_kernel_write_compat(fp, ksu_sf_bin_start, size, &pos);
         filp_close(fp, 0);
         pr_info("susfs: ksu_sf binary successfully auto-written by kernel on boot completed!\n");
     } else {
