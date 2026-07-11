@@ -665,15 +665,24 @@ CONFIG_WCD_SPI_AC=y
 # ReSuKiSU
 CONFIG_KSU=y
 CONFIG_KSU_SUSFS=y
+# default enable with CONFIG_KSU_SUSFS=y
 CONFIG_KSU_SUSFS_SUS_PATH=y
 CONFIG_KSU_SUSFS_SUS_MOUNT=y
 CONFIG_KSU_SUSFS_SUS_KSTAT=y
 CONFIG_KSU_SUSFS_SPOOF_UNAME=y
-CONFIG_KSU_SUSFS_ENABLE_LOG=y
-CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
 CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
 CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
 CONFIG_KSU_SUSFS_SUS_MAP=y
+# need enable manually
+CONFIG_KSU_SUSFS_ENABLE_LOG=y
+CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+CONFIG_KSU_SUSFS_TRY_UMOUNT=y                                                                                                                                                                                      
+CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y                                                                                                                                                                  
+CONFIG_KSU_SUSFS_SUS_SU=y
+# CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y                                                                                                                                                                                 
+# These aggressive configurations, such as mount firmware in /vendor/firmware_mnt, /vendor/bt_firmware, are not detected by the system and thus trigger SRPLL lock failures, so they are not defined.
+# CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y                                                                                                                                                                    
+# CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y                                                                                                                                                              
 
 # TCP Congestion Control BBR
 CONFIG_TCP_CONG_BBR=y
