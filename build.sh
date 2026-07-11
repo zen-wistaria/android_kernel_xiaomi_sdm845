@@ -6,6 +6,12 @@ export SUBARCH=arm64
 
 TC="$HOME/Coding/proton-clang"
 
+
+# Dalam sistem kompilasi kernel Linux ( Makefile ), compiler tidak melacak perubahan isi file luar yang disisipkan menggunakan perintah  .incbin .                                                                                                                                                                                                                                                                                              
+# Karena berkas source  boot_event.c  tanggal modifikasinya dianggap tidak berubah, proses build kernel Anda sebelumnya melewatkan (skip) kompilasi ulang file tersebut dan langsung menggunakan objek  boot_event.o    
+# yang lama. Akibatnya, kernel baru Anda tetap menyematkan file  ksu_sf  versi lama!    
+touch KernelSU/kernel/runtime/boot_event.c
+
 # ==== Merge defconfig — PATH default sistem, aman ====
 mkdir -p out
 scripts/kconfig/merge_config.sh -O out \

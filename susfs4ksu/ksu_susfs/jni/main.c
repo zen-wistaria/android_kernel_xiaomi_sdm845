@@ -103,8 +103,9 @@
  ** Define Struct **
  *******************/
 struct st_susfs_sus_path {
-	unsigned long           target_ino;
 	char                    target_pathname[SUSFS_MAX_LEN_PATHNAME];
+	int                     err;
+	unsigned long           target_ino;
 };
 
 struct st_susfs_sus_mount {
