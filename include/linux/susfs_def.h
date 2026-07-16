@@ -2,6 +2,7 @@
 #define KSU_SUSFS_DEF_H
 
 #include <linux/bits.h>
+#include <linux/thread_info.h>
 
 #define SUSFS_MAGIC 0xFAFAFAFA
 
@@ -59,6 +60,25 @@
 
 #define TASK_STRUCT_NON_ROOT_USER_APP_PROC BIT(24)
 #define TASK_STRUCT_UMOUNTED BIT(25)
+#define TIF_PROC_UMOUNTED 33
+
+#define AS_FLAGS_SUS_MAP 39
+
+struct st_susfs_sus_map {
+	char target_pathname[256];
+	int err;
+};
+
+/* v1.5.5 compat: use susfs_task_state (task_struct field) instead of TIF_PROC_UMOUNTED (thread_info flag) */
+static inline bool susfs_is_current_proc_umounted_app(void) {
+	return (likely(current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC) &&
+			current_uid().val >= 10000);
+}
+
+#define SUSFS_IS_INODE_SUS_MAP(inode) \
+	inode && inode->i_mapping && \
+	unlikely(test_bit(AS_FLAGS_SUS_MAP, &inode->i_mapping->flags)) && \
+	susfs_is_current_proc_umounted_app()
 
 #define MAGIC_MOUNT_WORKDIR "/debug_ramdisk/workdir"
 #define DATA_ADB_UMOUNT_FOR_ZYGOTE_SYSTEM_PROCESS "/data/adb/susfs_umount_for_zygote_system_process"

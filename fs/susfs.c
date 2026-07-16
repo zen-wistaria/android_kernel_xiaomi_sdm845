@@ -313,12 +313,6 @@ out_free_pathname:
 /* sus_kstat */
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 static DEFINE_HASHTABLE(SUS_KSTAT_HLIST, 10);
-#ifdef CONFIG_KSU_SUSFS_SUS_MAP
-struct st_susfs_sus_map_hlist {
-	unsigned long                   target_ino;
-	struct hlist_node               node;
-};
-#endif
 static int susfs_update_sus_kstat_inode(char *target_pathname) {
 	struct path p;
 	struct inode *inode = NULL;
@@ -1032,72 +1026,44 @@ void susfs_set_current_proc_umounted(void) {
 }
 
 
-/* piggyback on SUS_KSTAT infrastructure: add a kstat entry with dev=0,ino=0 */
-struct fake_kstat_entry {
-	struct hlist_node node;
-	unsigned long target_ino;
-	struct st_susfs_sus_kstat info;
-};
-
 int susfs_add_sus_map(void __user *user_info) {
-	char pathname[256];
+	struct st_susfs_sus_map info = {0};
 	struct path path;
 	struct inode *inode = NULL;
-	struct fake_kstat_entry *kentry, *ktmp;
-	struct hlist_node *hnode;
-	int bkt;
-	int err = 0;
 
-	if (copy_from_user(pathname, user_info, sizeof(pathname))) {
-		SUSFS_LOGE("copy_from_user failed for sus_map\n");
-		return -EFAULT;
+	if (copy_from_user(&info, (struct st_susfs_sus_map __user *)user_info, sizeof(info))) {
+		info.err = -EFAULT;
+		goto out_copy_to_user;
 	}
-	pathname[sizeof(pathname)-1] = '\0';
 
-	err = kern_path(pathname, LOOKUP_FOLLOW, &path);
-	if (err) {
-		SUSFS_LOGE("sus_map: failed opening '%s', err=%d\n", pathname, err);
-		return err;
+	if (*info.target_pathname == '\0') {
+		info.err = -EINVAL;
+		goto out_copy_to_user;
+	}
+
+	info.err = kern_path(info.target_pathname, LOOKUP_FOLLOW, &path);
+	if (info.err) {
+		SUSFS_LOGE("sus_map: failed opening '%s'\n", info.target_pathname);
+		goto out_copy_to_user;
 	}
 
 	inode = d_backing_inode(path.dentry);
 	if (!inode) {
 		SUSFS_LOGE("sus_map: inode is NULL\n");
-		path_put(&path);
-		return -ENOENT;
+		info.err = -ENOENT;
+		goto out_path_put;
 	}
 
-	/* remove any existing entry for this ino from SUS_KSTAT_HLIST */
-	spin_lock(&susfs_spin_lock);
-	hash_for_each_safe(SUS_KSTAT_HLIST, bkt, hnode, ktmp, node) {
-		if (ktmp->target_ino == inode->i_ino) {
-			hash_del(&ktmp->node);
-			kfree(ktmp);
-			break;
-		}
-	}
+	set_bit(AS_FLAGS_SUS_MAP, &inode->i_mapping->flags);
+	SUSFS_LOGI("sus_map: flagged AS_FLAGS_SUS_MAP on '%s', ino=%lu\n",
+		   info.target_pathname, inode->i_ino);
+	info.err = 0;
 
-	/* create fake kstat entry with dev=0, ino=0 */
-	kentry = kzalloc(sizeof(*kentry), GFP_KERNEL);
-	if (!kentry) {
-		spin_unlock(&susfs_spin_lock);
-		path_put(&path);
-		return -ENOMEM;
-	}
-	kentry->target_ino = inode->i_ino;
-	kentry->info.target_ino = inode->i_ino;
-	kentry->info.spoofed_dev = 0;
-	kentry->info.spoofed_ino = 0;
-	hash_add(SUS_KSTAT_HLIST, &kentry->node, inode->i_ino);
-
-	/* ensure the inode has SUS_KSTAT flag so show_map_vma will call us */
-	spin_lock(&inode->i_lock);
-	inode->i_state |= INODE_STATE_SUS_KSTAT;
-	spin_unlock(&inode->i_lock);
-	spin_unlock(&susfs_spin_lock);
-
-	SUSFS_LOGI("sus_map: added '%s' ino=%lu (hidden via kstat dev=0,ino=0)\n",
-		   pathname, inode->i_ino);
+out_path_put:
 	path_put(&path);
-	return 0;
+out_copy_to_user:
+	if (copy_to_user(&((struct st_susfs_sus_map __user *)user_info)->err, &info.err, sizeof(info.err)))
+		info.err = -EFAULT;
+	SUSFS_LOGI("CMD_SUSFS_ADD_SUS_MAP -> ret: %d\n", info.err);
+	return info.err;
 }
