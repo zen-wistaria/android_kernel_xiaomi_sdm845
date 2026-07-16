@@ -383,6 +383,10 @@ bypass_orig_flow:
 		pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
 	}
 
+	/* skip entire entry if flagged as sus_map (dev=0, ino=0) */
+	if (unlikely(dev == 0 && ino == 0 && file))
+		return;
+
 	/* We don't show the stack guard page in /proc/maps */
 	start = vma->vm_start;
 	end = vma->vm_end;

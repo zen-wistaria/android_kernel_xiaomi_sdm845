@@ -67,6 +67,7 @@
 #define CMD_SUSFS_SHOW_SUS_SU_WORKING_MODE 0x555e4
 #define CMD_SUSFS_IS_SUS_SU_READY 0x555f0
 #define CMD_SUSFS_SUS_SU 0x60000
+#define CMD_SUSFS_ADD_SUS_MAP 0x555c3
 
 #define SUSFS_MAX_LEN_PATHNAME 256
 #define SUSFS_MAX_LEN_MOUNT_TYPE_NAME 32
@@ -111,6 +112,10 @@ struct st_susfs_sus_path {
 struct st_susfs_sus_mount {
 	char                    target_pathname[SUSFS_MAX_LEN_PATHNAME];
 	unsigned long           target_dev;
+};
+
+struct st_susfs_sus_map {
+	char                    target_pathname[SUSFS_MAX_LEN_PATHNAME];
 };
 
 struct st_susfs_sus_kstat {
@@ -627,6 +632,18 @@ int main(int argc, char *argv[]) {
 		PRT_MSG_IF_OPERATION_NOT_SUPPORTED(error, CMD_SUSFS_SET_CMDLINE_OR_BOOTCONFIG);
 		return error;
 	// add_open_redirect
+	} else if (argc == 3 && !strcmp(argv[1], "add_sus_map")) {
+		struct st_susfs_sus_map info;
+		struct stat sb;
+
+		if (get_file_stat(argv[2], &sb)) {
+			log("[-] Failed to get stat from path: '%s'\n", argv[2]);
+			return 1;
+		}
+		strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME-1);
+		prctl(KERNEL_SU_OPTION, CMD_SUSFS_ADD_SUS_MAP, &info, NULL, &error);
+		PRT_MSG_IF_OPERATION_NOT_SUPPORTED(error, CMD_SUSFS_ADD_SUS_MAP);
+		return error;
 	} else if (argc == 4 && !strcmp(argv[1], "add_open_redirect")) {
 		struct st_susfs_open_redirect info;
 		struct stat sb;
