@@ -723,13 +723,28 @@ static void avc_audit_pre_callback(struct audit_buffer *ab, void *a)
  * @ab: the audit buffer
  * @a: audit_data
  */
+#ifdef CONFIG_KSU_SUSFS
+extern bool susfs_is_avc_log_spoofing_enabled;
+extern u32 susfs_ksu_sid;
+extern u32 susfs_priv_app_sid;
+#endif
+
 static void avc_audit_post_callback(struct audit_buffer *ab, void *a)
 {
 	struct common_audit_data *ad = a;
+#ifdef CONFIG_KSU_SUSFS
+	u32 orig_tsid = ad->selinux_audit_data->tsid;
+	if (unlikely(susfs_is_avc_log_spoofing_enabled) &&
+	    unlikely(orig_tsid == susfs_ksu_sid))
+		ad->selinux_audit_data->tsid = susfs_priv_app_sid;
+#endif
 	audit_log_format(ab, " ");
 	avc_dump_query(ab, ad->selinux_audit_data->ssid,
 			   ad->selinux_audit_data->tsid,
 			   ad->selinux_audit_data->tclass);
+#ifdef CONFIG_KSU_SUSFS
+	ad->selinux_audit_data->tsid = orig_tsid;
+#endif
 	if (ad->selinux_audit_data->denied) {
 		audit_log_format(ab, " permissive=%u",
 				 ad->selinux_audit_data->result ? 0 : 1);

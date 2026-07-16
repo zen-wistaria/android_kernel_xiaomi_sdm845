@@ -960,9 +960,25 @@ void susfs_enable_log(void __user *user_info) {
 }
 #endif
 
+/* AVC log spoofing */
+bool susfs_is_avc_log_spoofing_enabled __read_mostly = false;
+extern u32 susfs_ksu_sid;
+extern u32 susfs_priv_app_sid;
+
 void susfs_set_avc_log_spoofing(void __user *user_info) {
-	/* stub - avc log spoofing not available in v1.5.5 */
-	SUSFS_LOGI("susfs_set_avc_log_spoofing called (stub)\n");
+	struct {
+		bool enabled;
+		int err;
+	} info = {0};
+
+	if (copy_from_user(&info, user_info, sizeof(info))) {
+		SUSFS_LOGE("copy_from_user failed for avc_log_spoofing\n");
+		return;
+	}
+
+	susfs_is_avc_log_spoofing_enabled = info.enabled;
+	SUSFS_LOGI("AVC log spoofing %s\n",
+		   info.enabled ? "enabled" : "disabled");
 }
 
 void susfs_get_enabled_features(void __user *user_info) {
