@@ -17,7 +17,7 @@
 #include <linux/shmem_fs.h>
 #include <linux/mm_inline.h>
 #include <linux/ctype.h>
-#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+#if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP)
 #include <linux/susfs_def.h>
 #endif
 
@@ -383,10 +383,20 @@ bypass_orig_flow:
 		pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
 	}
 
-	/* skip entire entry if flagged as sus_map (dev=0, ino=0) */
-	if (unlikely(dev == 0 && ino == 0 && file))
-		return;
 
+	/* skip sus_map hidden entries (dev=0, ino=0) */
+	if (unlikely(dev == 0 && ino == 0 && file)) {
+		// const char *__name = vma->vm_file ? (const char *)vma->vm_file->f_path.dentry->d_name.name : NULL;
+		// printk(KERN_INFO "sus_map: uid=%d flags=0x%llx file='%s'\n",
+		// 	__kuid_val(current_uid()), current->susfs_task_state,
+		// 	__name ? __name : "?");
+		if (current_uid().val >= 10000 && current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC) {
+			return;
+		}
+		// printk(KERN_INFO "sus_map: SHOW (root/system)\n");
+		dev = file_inode(vma->vm_file)->i_sb->s_dev;
+		ino = file_inode(vma->vm_file)->i_ino;
+	}
 	/* We don't show the stack guard page in /proc/maps */
 	start = vma->vm_start;
 	end = vma->vm_end;
