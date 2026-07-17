@@ -688,8 +688,12 @@ int hdd_reg_set_country(struct hdd_context *hdd_ctx, char *country_code)
 	QDF_STATUS status;
 	uint8_t cc[REG_ALPHA2_LEN + 1];
 
-	cc[0] = '0';
-	cc[1] = '0';
+	if (!country_code) {
+		hdd_err("country_code is null");
+		return -EINVAL;
+	}
+
+	qdf_mem_copy(cc, country_code, REG_ALPHA2_LEN);
 	cc[REG_ALPHA2_LEN] = '\0';
 
 	status = ucfg_reg_set_country(hdd_ctx->pdev, cc);
@@ -885,17 +889,21 @@ void hdd_reg_notifier(struct wiphy *wiphy,
 	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
 	char country[REG_ALPHA2_LEN + 1] = {0};
 
-	country[0] = '0';
-	country[1] = '0';
-	country[REG_ALPHA2_LEN] = '\0';
+	hdd_debug("country: %c%c, initiator %d, dfs_region: %d",
+		  request->alpha2[0],
+		  request->alpha2[1],
+		  request->initiator,
+		  request->dfs_region);
 
 	switch (request->initiator) {
 	case NL80211_REGDOM_SET_BY_USER:
-	case NL80211_REGDOM_SET_BY_CORE:
-	case NL80211_REGDOM_SET_BY_DRIVER:
+		qdf_mem_copy(country, request->alpha2, QDF_MIN(
+			     sizeof(request->alpha2), sizeof(country)));
 		status = ucfg_reg_set_country(hdd_ctx->pdev, (uint8_t *)country);
 		break;
+	case NL80211_REGDOM_SET_BY_CORE:
 	case NL80211_REGDOM_SET_BY_COUNTRY_IE:
+	case NL80211_REGDOM_SET_BY_DRIVER:
 	default:
 		break;
 	}
