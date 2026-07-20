@@ -1828,7 +1828,8 @@ again:
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	if (!IS_ERR(dentry) && dentry->d_inode && unlikely(dentry->d_inode->i_state & INODE_STATE_SUS_PATH) && likely(current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC)) {
 		dput(dentry);
-		return ERR_PTR(-ENOENT);
+		dentry = ERR_PTR(-ENOENT);
+		goto out;
 	}
 #endif
 out:
@@ -2490,6 +2491,7 @@ static int filename_lookup(int dfd, struct filename *name, unsigned flags,
 	restore_nameidata();
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	if (!retval && path->dentry->d_inode && unlikely(path->dentry->d_inode->i_state & INODE_STATE_SUS_PATH) && likely(current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC)) {
+		path_put(path);
 		putname(name);
 		return -ENOENT;
 	}
