@@ -13,12 +13,14 @@
 #include <linux/version.h>
 #include <linux/fdtable.h>
 #include <linux/statfs.h>
+#include <linux/srcu.h>
 #include <linux/susfs.h>
 #include "mount.h"
 
 static spinlock_t susfs_spin_lock;
 
 extern bool susfs_is_current_ksu_domain(void);
+extern struct cred *ksu_cred;
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 extern void ksu_try_umount(const char *mnt, bool check_mnt, int flags, uid_t uid);
 #endif
@@ -912,14 +914,23 @@ out:
 #endif // #ifdef CONFIG_KSU_SUSFS_SUS_SU
 
 /* ReSuKiSU compatibility: susfs_extra_works */
-static void susfs_extra_works_fn(struct work_struct *work) {
-	/* stub - extra works not available in v1.5.5 */
-}
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+static DEFINE_SRCU(susfs_srcu_sus_path_loop);
+static DEFINE_MUTEX(susfs_mutex_lock_sus_path);
+static LIST_HEAD(LH_SUS_PATH_LOOP);
+struct st_susfs_sus_path_list {
+	struct st_susfs_sus_path          info;
+	char                              target_pathname[SUSFS_MAX_LEN_PATHNAME];
+	struct list_head                  list;
+};
+#endif
 struct work_struct susfs_extra_works;
+static void susfs_extra_works_fn(struct work_struct *work);
 
 /* susfs_init */
 void susfs_init(void) {
 	spin_lock_init(&susfs_spin_lock);
+	SUSFS_LOGI("Initializing susfs_extra_works\n");
 	INIT_WORK(&susfs_extra_works, susfs_extra_works_fn);
 #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
 	spin_lock_init(&susfs_uname_spin_lock);
@@ -936,9 +947,65 @@ void susfs_init(void) {
 /***************************************/
 
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
+static void susfs_run_sus_path_loop(void) {
+	struct st_susfs_sus_path_list *cursor = NULL;
+	struct path path;
+	struct inode *inode;
+	const struct cred *saved = override_creds(ksu_cred);
+	int srcu_idx;
+
+	if (!ksu_cred)
+		return;
+
+	srcu_idx = srcu_read_lock(&susfs_srcu_sus_path_loop);
+
+	list_for_each_entry_rcu(cursor, &LH_SUS_PATH_LOOP, list) {
+		if (!kern_path(cursor->target_pathname, 0, &path)) {
+			inode = d_backing_inode(path.dentry);
+			if (inode && !(inode->i_state & INODE_STATE_SUS_PATH)) {
+				spin_lock(&inode->i_lock);
+				inode->i_state |= INODE_STATE_SUS_PATH;
+				spin_unlock(&inode->i_lock);
+				SUSFS_LOGI("re-flag INODE_STATE_SUS_PATH on '%s', ino=%lu\n",
+					   cursor->target_pathname, inode->i_ino);
+			}
+			path_put(&path);
+		}
+	}
+	srcu_read_unlock(&susfs_srcu_sus_path_loop, srcu_idx);
+	revert_creds(saved);
+}
+
+static void susfs_extra_works_fn(struct work_struct *work) {
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+	susfs_run_sus_path_loop();
+#endif
+}
+
 int susfs_add_sus_path_loop(void __user *user_info) {
-	/* In v1.5.5, sus_path_loop is the same as add_sus_path */
-	return susfs_add_sus_path((struct st_susfs_sus_path __user *)user_info);
+	struct st_susfs_sus_path_list *new_list = NULL;
+	struct st_susfs_sus_path info = {0};
+
+	if (copy_from_user(&info, (struct st_susfs_sus_path __user *)user_info, sizeof(info)))
+		return -EFAULT;
+
+	if (*info.target_pathname == '\0')
+		return -EINVAL;
+
+	new_list = kzalloc(sizeof(*new_list), GFP_KERNEL);
+	if (!new_list)
+		return -ENOMEM;
+
+	strscpy(new_list->info.target_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME - 1);
+	strscpy(new_list->target_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME - 1);
+	INIT_LIST_HEAD(&new_list->list);
+
+	mutex_lock(&susfs_mutex_lock_sus_path);
+	list_add_tail_rcu(&new_list->list, &LH_SUS_PATH_LOOP);
+	mutex_unlock(&susfs_mutex_lock_sus_path);
+
+	SUSFS_LOGI("sus_path_loop: added '%s'\n", new_list->target_pathname);
+	return 0;
 }
 #endif
 
