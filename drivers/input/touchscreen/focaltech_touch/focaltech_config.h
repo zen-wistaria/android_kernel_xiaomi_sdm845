@@ -119,14 +119,17 @@
 /*
  * Gesture function enable
  * default: disable
+ * NOTE: Gesture mode causes touch state corruption on resume
+ * (ghost touch at left edge), disable for stable multitouch.
  */
-#define FTS_GESTURE_EN                          1
+#define FTS_GESTURE_EN                          0
 
 /*
  * ESD check & protection
  * default: disable
+ * Protects against noise/interference that corrupts touch state.
  */
-#define FTS_ESDCHECK_EN                         0
+#define FTS_ESDCHECK_EN                         1
 
 /*
  * Glove mode enable
