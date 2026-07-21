@@ -134,6 +134,7 @@ int susfs_sus_ino_for_filldir64(unsigned long ino);
 /* sus_mount */
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 int susfs_add_sus_mount(struct st_susfs_sus_mount* __user user_info);
+extern bool susfs_hide_sus_mnts_enabled;
 #ifdef CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
 int susfs_auto_add_sus_bind_mount(const char *pathname, struct path *path_target);
 #endif // #ifdef CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT

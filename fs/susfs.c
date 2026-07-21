@@ -1037,9 +1037,15 @@ int susfs_add_sus_path_loop(void __user *user_info) {
 #endif
 
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+bool susfs_hide_sus_mnts_enabled __read_mostly = false;
 void susfs_set_hide_sus_mnts_for_non_su_procs(void __user *user_info) {
-	/* stub - not fully implemented in v1.5.5 for non-GKI */
-	SUSFS_LOGI("susfs_set_hide_sus_mnts_for_non_su_procs called (stub)\n");
+	bool enabled;
+	if (copy_from_user(&enabled, user_info, sizeof(enabled))) {
+		SUSFS_LOGE("copy_from_user failed\n");
+		return;
+	}
+	susfs_hide_sus_mnts_enabled = enabled;
+	SUSFS_LOGI("susfs_set_hide_sus_mnts_for_non_su_procs: %d\n", enabled);
 }
 #endif
 

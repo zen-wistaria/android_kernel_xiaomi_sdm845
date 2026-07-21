@@ -13,6 +13,7 @@
 #include "proc/internal.h" /* only for get_proc_task() in ->open() */
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 #include <linux/susfs_def.h>
+#include <linux/susfs.h>
 #endif
 
 #include "pnode.h"
@@ -105,6 +106,17 @@ static int show_vfsmnt(struct seq_file *m, struct vfsmount *mnt)
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 	if (unlikely(r->mnt_id >= DEFAULT_SUS_MNT_ID))
 		return 0;
+	/*
+	 * Second-layer hide for mounts flagged with INODE_STATE_SUS_MOUNT.
+	 * Only effective on non-root user-app processes when the toggle is on.
+	 * Uses TASK_STRUCT flag instead of KSU domain check to avoid bootloop.
+	 */
+	if (unlikely(susfs_hide_sus_mnts_enabled &&
+		     (current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC) &&
+		     current_uid().val >= 10000 &&
+		     mnt->mnt_root->d_inode &&
+		     (mnt->mnt_root->d_inode->i_state & INODE_STATE_SUS_MOUNT)))
+		return 0;
 #endif
 
 	if (sb->s_op->show_devname) {
@@ -145,6 +157,12 @@ static int show_mountinfo(struct seq_file *m, struct vfsmount *mnt)
 
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 	if (unlikely(r->mnt_id >= DEFAULT_SUS_MNT_ID))
+		return 0;
+	if (unlikely(susfs_hide_sus_mnts_enabled &&
+		     (current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC) &&
+		     current_uid().val >= 10000 &&
+		     mnt->mnt_root->d_inode &&
+		     (mnt->mnt_root->d_inode->i_state & INODE_STATE_SUS_MOUNT)))
 		return 0;
 #endif
 
@@ -214,6 +232,12 @@ static int show_vfsstat(struct seq_file *m, struct vfsmount *mnt)
 
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 	if (unlikely(r->mnt_id >= DEFAULT_SUS_MNT_ID))
+		return 0;
+	if (unlikely(susfs_hide_sus_mnts_enabled &&
+		     (current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC) &&
+		     current_uid().val >= 10000 &&
+		     mnt->mnt_root->d_inode &&
+		     (mnt->mnt_root->d_inode->i_state & INODE_STATE_SUS_MOUNT)))
 		return 0;
 #endif
 
