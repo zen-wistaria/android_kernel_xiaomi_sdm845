@@ -406,16 +406,16 @@ int susfs_add_sus_kstat(struct st_susfs_sus_kstat* __user user_info) {
 	hash_add(SUS_KSTAT_HLIST, &new_entry->node, info.target_ino);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
 	if (update_hlist) {
-		SUSFS_LOGI("is_statically: '%d', target_ino: '%lu', target_pathname: '%s', spoofed_ino: '%lu', spoofed_dev: '%lu', spoofed_nlink: '%u', spoofed_size: '%llu', spoofed_atime_tv_sec: '%ld', spoofed_mtime_tv_sec: '%ld', spoofed_ctime_tv_sec: '%ld', spoofed_atime_tv_nsec: '%ld', spoofed_mtime_tv_nsec: '%ld', spoofed_ctime_tv_nsec: '%ld', spoofed_blksize: '%lu', spoofed_blocks: '%llu', is successfully added to SUS_KSTAT_HLIST\n",
-				new_entry->info.is_statically, new_entry->info.target_ino, new_entry->info.target_pathname,
+		SUSFS_LOGI("flags: '%d', target_ino: '%lu', target_pathname: '%s', spoofed_ino: '%lu', spoofed_dev: '%lu', spoofed_nlink: '%u', spoofed_size: '%llu', spoofed_atime_tv_sec: '%ld', spoofed_mtime_tv_sec: '%ld', spoofed_ctime_tv_sec: '%ld', spoofed_atime_tv_nsec: '%ld', spoofed_mtime_tv_nsec: '%ld', spoofed_ctime_tv_nsec: '%ld', spoofed_blksize: '%lu', spoofed_blocks: '%llu', is successfully added to SUS_KSTAT_HLIST\n",
+				new_entry->info.flags, new_entry->info.target_ino, new_entry->info.target_pathname,
 				new_entry->info.spoofed_ino, new_entry->info.spoofed_dev,
 				new_entry->info.spoofed_nlink, new_entry->info.spoofed_size,
 				new_entry->info.spoofed_atime_tv_sec, new_entry->info.spoofed_mtime_tv_sec, new_entry->info.spoofed_ctime_tv_sec,
 				new_entry->info.spoofed_atime_tv_nsec, new_entry->info.spoofed_mtime_tv_nsec, new_entry->info.spoofed_ctime_tv_nsec,
 				new_entry->info.spoofed_blksize, new_entry->info.spoofed_blocks);
 	} else {
-		SUSFS_LOGI("is_statically: '%d', target_ino: '%lu', target_pathname: '%s', spoofed_ino: '%lu', spoofed_dev: '%lu', spoofed_nlink: '%u', spoofed_size: '%llu', spoofed_atime_tv_sec: '%ld', spoofed_mtime_tv_sec: '%ld', spoofed_ctime_tv_sec: '%ld', spoofed_atime_tv_nsec: '%ld', spoofed_mtime_tv_nsec: '%ld', spoofed_ctime_tv_nsec: '%ld', spoofed_blksize: '%lu', spoofed_blocks: '%llu', is successfully updated to SUS_KSTAT_HLIST\n",
-				new_entry->info.is_statically, new_entry->info.target_ino, new_entry->info.target_pathname,
+		SUSFS_LOGI("flags: '%d', target_ino: '%lu', target_pathname: '%s', spoofed_ino: '%lu', spoofed_dev: '%lu', spoofed_nlink: '%u', spoofed_size: '%llu', spoofed_atime_tv_sec: '%ld', spoofed_mtime_tv_sec: '%ld', spoofed_ctime_tv_sec: '%ld', spoofed_atime_tv_nsec: '%ld', spoofed_mtime_tv_nsec: '%ld', spoofed_ctime_tv_nsec: '%ld', spoofed_blksize: '%lu', spoofed_blocks: '%llu', is successfully updated to SUS_KSTAT_HLIST\n",
+				new_entry->info.flags, new_entry->info.target_ino, new_entry->info.target_pathname,
 				new_entry->info.spoofed_ino, new_entry->info.spoofed_dev,
 				new_entry->info.spoofed_nlink, new_entry->info.spoofed_size,
 				new_entry->info.spoofed_atime_tv_sec, new_entry->info.spoofed_mtime_tv_sec, new_entry->info.spoofed_ctime_tv_sec,
@@ -424,16 +424,16 @@ int susfs_add_sus_kstat(struct st_susfs_sus_kstat* __user user_info) {
 	}
 #else
 	if (update_hlist) {
-		SUSFS_LOGI("is_statically: '%d', target_ino: '%lu', target_pathname: '%s', spoofed_ino: '%lu', spoofed_dev: '%lu', spoofed_nlink: '%u', spoofed_size: '%u', spoofed_atime_tv_sec: '%ld', spoofed_mtime_tv_sec: '%ld', spoofed_ctime_tv_sec: '%ld', spoofed_atime_tv_nsec: '%ld', spoofed_mtime_tv_nsec: '%ld', spoofed_ctime_tv_nsec: '%ld', spoofed_blksize: '%lu', spoofed_blocks: '%llu', is successfully added to SUS_KSTAT_HLIST\n",
-				new_entry->info.is_statically, new_entry->info.target_ino, new_entry->info.target_pathname,
+		SUSFS_LOGI("flags: '%d', target_ino: '%lu', target_pathname: '%s', spoofed_ino: '%lu', spoofed_dev: '%lu', spoofed_nlink: '%u', spoofed_size: '%u', spoofed_atime_tv_sec: '%ld', spoofed_mtime_tv_sec: '%ld', spoofed_ctime_tv_sec: '%ld', spoofed_atime_tv_nsec: '%ld', spoofed_mtime_tv_nsec: '%ld', spoofed_ctime_tv_nsec: '%ld', spoofed_blksize: '%lu', spoofed_blocks: '%llu', is successfully added to SUS_KSTAT_HLIST\n",
+				new_entry->info.flags, new_entry->info.target_ino, new_entry->info.target_pathname,
 				new_entry->info.spoofed_ino, new_entry->info.spoofed_dev,
 				new_entry->info.spoofed_nlink, new_entry->info.spoofed_size,
 				new_entry->info.spoofed_atime_tv_sec, new_entry->info.spoofed_mtime_tv_sec, new_entry->info.spoofed_ctime_tv_sec,
 				new_entry->info.spoofed_atime_tv_nsec, new_entry->info.spoofed_mtime_tv_nsec, new_entry->info.spoofed_ctime_tv_nsec,
 				new_entry->info.spoofed_blksize, new_entry->info.spoofed_blocks);
 	} else {
-		SUSFS_LOGI("is_statically: '%d', target_ino: '%lu', target_pathname: '%s', spoofed_ino: '%lu', spoofed_dev: '%lu', spoofed_nlink: '%u', spoofed_size: '%u', spoofed_atime_tv_sec: '%ld', spoofed_mtime_tv_sec: '%ld', spoofed_ctime_tv_sec: '%ld', spoofed_atime_tv_nsec: '%ld', spoofed_mtime_tv_nsec: '%ld', spoofed_ctime_tv_nsec: '%ld', spoofed_blksize: '%lu', spoofed_blocks: '%llu', is successfully updated to SUS_KSTAT_HLIST\n",
-				new_entry->info.is_statically, new_entry->info.target_ino, new_entry->info.target_pathname,
+		SUSFS_LOGI("flags: '%d', target_ino: '%lu', target_pathname: '%s', spoofed_ino: '%lu', spoofed_dev: '%lu', spoofed_nlink: '%u', spoofed_size: '%u', spoofed_atime_tv_sec: '%ld', spoofed_mtime_tv_sec: '%ld', spoofed_ctime_tv_sec: '%ld', spoofed_atime_tv_nsec: '%ld', spoofed_mtime_tv_nsec: '%ld', spoofed_ctime_tv_nsec: '%ld', spoofed_blksize: '%lu', spoofed_blocks: '%llu', is successfully updated to SUS_KSTAT_HLIST\n",
+				new_entry->info.flags, new_entry->info.target_ino, new_entry->info.target_pathname,
 				new_entry->info.spoofed_ino, new_entry->info.spoofed_dev,
 				new_entry->info.spoofed_nlink, new_entry->info.spoofed_size,
 				new_entry->info.spoofed_atime_tv_sec, new_entry->info.spoofed_mtime_tv_sec, new_entry->info.spoofed_ctime_tv_sec,
@@ -498,35 +498,62 @@ out_spin_unlock:
 
 void susfs_sus_ino_for_generic_fillattr(unsigned long ino, struct kstat *stat) {
 	struct st_susfs_sus_kstat_hlist *entry;
+	unsigned long flags;
 
 	hash_for_each_possible(SUS_KSTAT_HLIST, entry, node, ino) {
-		if (entry->target_ino == ino) {
+		if (entry->target_ino != ino)
+			continue;
+
+		flags = entry->info.flags;
+		/*
+		 * Strip informational BIT(0) — KSTAT_FLAG_IS_STATICALLY
+		 * is not a spoof field. If no spoof bits remain (flags==0
+		 * or BIT(0) only), spoof ALL fields (legacy compat).
+		 */
+		flags &= ~KSTAT_FLAG_IS_STATICALLY;
+		if (!flags || (flags & KSTAT_SPOOF_DEV))
 			stat->dev = entry->info.spoofed_dev;
+		if (!flags || (flags & KSTAT_SPOOF_INO))
 			stat->ino = entry->info.spoofed_ino;
+		if (!flags || (flags & KSTAT_SPOOF_NLINK))
 			stat->nlink = entry->info.spoofed_nlink;
+		if (!flags || (flags & KSTAT_SPOOF_SIZE))
 			stat->size = entry->info.spoofed_size;
+		if (!flags || (flags & KSTAT_SPOOF_ATIME)) {
 			stat->atime.tv_sec = entry->info.spoofed_atime_tv_sec;
 			stat->atime.tv_nsec = entry->info.spoofed_atime_tv_nsec;
+		}
+		if (!flags || (flags & KSTAT_SPOOF_MTIME)) {
 			stat->mtime.tv_sec = entry->info.spoofed_mtime_tv_sec;
 			stat->mtime.tv_nsec = entry->info.spoofed_mtime_tv_nsec;
+		}
+		if (!flags || (flags & KSTAT_SPOOF_CTIME)) {
 			stat->ctime.tv_sec = entry->info.spoofed_ctime_tv_sec;
 			stat->ctime.tv_nsec = entry->info.spoofed_ctime_tv_nsec;
-			stat->blocks = entry->info.spoofed_blocks;
-			stat->blksize = entry->info.spoofed_blksize;
-			return;
 		}
+		if (!flags || (flags & KSTAT_SPOOF_BLOCKS))
+			stat->blocks = entry->info.spoofed_blocks;
+		if (!flags || (flags & KSTAT_SPOOF_BLKSIZE))
+			stat->blksize = entry->info.spoofed_blksize;
+		return;
 	}
 }
 
 void susfs_sus_ino_for_show_map_vma(unsigned long ino, dev_t *out_dev, unsigned long *out_ino) {
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 	struct st_susfs_sus_kstat_hlist *entry;
+	unsigned long flags;
 	hash_for_each_possible(SUS_KSTAT_HLIST, entry, node, ino) {
-		if (entry->target_ino == ino) {
+		if (entry->target_ino != ino)
+			continue;
+		flags = entry->info.flags;
+		/* Strip informational BIT(0) — same logic as fillattr */
+		flags &= ~KSTAT_FLAG_IS_STATICALLY;
+		if (!flags || (flags & KSTAT_SPOOF_DEV))
 			*out_dev = entry->info.spoofed_dev;
+		if (!flags || (flags & KSTAT_SPOOF_INO))
 			*out_ino = entry->info.spoofed_ino;
-			return;
-		}
+		return;
 	}
 #endif
 }

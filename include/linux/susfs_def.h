@@ -32,19 +32,35 @@
 #define CMD_SUSFS_IS_SUS_SU_READY 0x555f0
 #define CMD_SUSFS_SUS_SU 0x60000
 
-#define SUSFS_MAX_LEN_PATHNAME 256 // 256 should address many paths already unless you are doing some strange experimental stuff, then set your own desired length
+#define SUSFS_MAX_LEN_PATHNAME 256
 #define SUSFS_FAKE_CMDLINE_OR_BOOTCONFIG_SIZE 4096
 
-#define TRY_UMOUNT_DEFAULT 0 /* used by susfs_try_umount() */
-#define TRY_UMOUNT_DETACH 1 /* used by susfs_try_umount() */
+#define TRY_UMOUNT_DEFAULT 0
+#define TRY_UMOUNT_DETACH 1
 
 #define SUS_SU_DISABLED 0
-#define SUS_SU_WITH_OVERLAY 1 /* deprecated */
+#define SUS_SU_WITH_OVERLAY 1
 #define SUS_SU_WITH_HOOKS 2
 
-#define DEFAULT_SUS_MNT_ID 100000 /* used by mount->mnt_id */
-#define DEFAULT_SUS_MNT_ID_FOR_KSU_PROC_UNSHARE 1000000 /* used by vfsmount->susfs_mnt_id_backup */
-#define DEFAULT_SUS_MNT_GROUP_ID 1000 /* used by mount->mnt_group_id */
+#define DEFAULT_SUS_MNT_ID 100000
+#define DEFAULT_SUS_MNT_ID_FOR_KSU_PROC_UNSHARE 1000000
+#define DEFAULT_SUS_MNT_GROUP_ID 1000
+
+/****************/
+/* KSTAT FLAGS  */
+/****************/
+/* Shared field: 'flags' (was 'is_statically') in struct st_susfs_sus_kstat */
+#define KSTAT_FLAG_IS_STATICALLY  BIT(0)  /* informational: added via add_sus_kstat_statically */
+#define KSTAT_SPOOF_DEV           BIT(1)
+#define KSTAT_SPOOF_INO           BIT(2)
+#define KSTAT_SPOOF_NLINK         BIT(3)
+#define KSTAT_SPOOF_SIZE          BIT(4)
+#define KSTAT_SPOOF_ATIME         BIT(5)
+#define KSTAT_SPOOF_MTIME         BIT(6)
+#define KSTAT_SPOOF_CTIME         BIT(7)
+#define KSTAT_SPOOF_BLOCKS        BIT(8)
+#define KSTAT_SPOOF_BLKSIZE       BIT(9)
+/* If flags == 0 or only KSTAT_FLAG_IS_STATICALLY set → spoof ALL fields (legacy compat) */
 
 /*
  * inode->i_state => storing flag 'INODE_STATE_'

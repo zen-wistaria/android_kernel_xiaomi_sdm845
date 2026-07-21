@@ -69,6 +69,21 @@
 #define CMD_SUSFS_SUS_SU 0x60000
 #define CMD_SUSFS_ADD_SUS_MAP 0x555c3
 
+/* KSTAT per-field spoof flags must match kernel include/linux/susfs_def.h */
+#ifndef BIT
+#define BIT(nr) (1UL << (nr))
+#endif
+#define KSTAT_FLAG_IS_STATICALLY  BIT(0)
+#define KSTAT_SPOOF_DEV           BIT(1)
+#define KSTAT_SPOOF_INO           BIT(2)
+#define KSTAT_SPOOF_NLINK         BIT(3)
+#define KSTAT_SPOOF_SIZE          BIT(4)
+#define KSTAT_SPOOF_ATIME         BIT(5)
+#define KSTAT_SPOOF_MTIME         BIT(6)
+#define KSTAT_SPOOF_CTIME         BIT(7)
+#define KSTAT_SPOOF_BLOCKS        BIT(8)
+#define KSTAT_SPOOF_BLKSIZE       BIT(9)
+
 #define SUSFS_MAX_LEN_PATHNAME 256
 #define SUSFS_MAX_LEN_MOUNT_TYPE_NAME 32
 
@@ -119,7 +134,7 @@ struct st_susfs_sus_map {
 };
 
 struct st_susfs_sus_kstat {
-	bool                    is_statically;
+	int                     flags;          /* BIT(0)=is_statically, BIT(1..)=KSTAT_SPOOF_* per-field */
 	unsigned long           target_ino; // the ino after bind mounted or overlayed
 	char                    target_pathname[SUSFS_MAX_LEN_PATHNAME];
 	unsigned long           spoofed_ino;
@@ -371,7 +386,7 @@ int main(int argc, char *argv[]) {
 			return 1;
 		}
 		
-		info.is_statically = true;
+		info.flags = KSTAT_FLAG_IS_STATICALLY;
 		/* ino */
 		if (strcmp(argv[3], "default")) {
 			ino = strtoul(argv[3], &endptr, 10);
@@ -498,7 +513,7 @@ int main(int argc, char *argv[]) {
 			return 1;
 		}
 		strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME-1);
-		info.is_statically = false;
+		info.flags = 0; /* legacy: spoof all */
 		info.target_ino = sb.st_ino;
 		copy_stat_to_sus_kstat(&info, &sb);
 		prctl(KERNEL_SU_OPTION, CMD_SUSFS_ADD_SUS_KSTAT, &info, NULL, &error);
@@ -514,7 +529,7 @@ int main(int argc, char *argv[]) {
 			return 1;
 		}
 		strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME-1);
-		info.is_statically = false;
+		info.flags = 0; /* legacy: spoof all */
 		info.target_ino = sb.st_ino;
 		info.spoofed_size = sb.st_size; // use the current size, not the spoofed one
 		info.spoofed_blocks = sb.st_blocks; // use the current blocks, not the spoofed one
@@ -531,7 +546,7 @@ int main(int argc, char *argv[]) {
 			return 1;
 		}
 		strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME-1);
-		info.is_statically = false;
+		info.flags = 0; /* legacy: spoof all */
 		info.target_ino = sb.st_ino;
 		prctl(KERNEL_SU_OPTION, CMD_SUSFS_UPDATE_SUS_KSTAT, &info, NULL, &error);
 		PRT_MSG_IF_OPERATION_NOT_SUPPORTED(error, CMD_SUSFS_UPDATE_SUS_KSTAT);
