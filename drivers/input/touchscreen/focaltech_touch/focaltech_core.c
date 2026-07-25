@@ -899,15 +899,44 @@ static int fts_read_touchdata(struct fts_ts_data *data)
 		events[i].area = buf[FTS_TOUCH_AREA_POS + base] >> 4;
 		events[i].p = buf[FTS_TOUCH_PRE_POS + base];
 
-		/* Validate coordinates against display bounds (1080x2246 from DTS).
-		 * Clamp out-of-bounds values to prevent ghost touches at edges. */
-		if (events[i].x > 1080) {
-			FTS_DEBUG("clamp x %d -> 1080", events[i].x);
-			events[i].x = 1080;
+		/* Validate coordinates against display bounds from platform data.
+		 * Clamp out-of-bounds values to prevent ghost touches at edges.
+		 * Detect coordinate corruption (e.g., center touch -> edge) and trigger recovery. */
+		if (events[i].x > data->pdata->x_max) {
+			FTS_DEBUG("clamp x %d -> %d", events[i].x, data->pdata->x_max);
+			events[i].x = data->pdata->x_max;
 		}
-		if (events[i].y > 2246) {
-			FTS_DEBUG("clamp y %d -> 2246", events[i].y);
-			events[i].y = 2246;
+		if (events[i].y > data->pdata->y_max) {
+			FTS_DEBUG("clamp y %d -> %d", events[i].y, data->pdata->y_max);
+			events[i].y = data->pdata->y_max;
+		}
+		if (events[i].x < data->pdata->x_min) {
+			FTS_DEBUG("clamp x %d -> %d", events[i].x, data->pdata->x_min);
+			events[i].x = data->pdata->x_min;
+		}
+		if (events[i].y < data->pdata->y_min) {
+			FTS_DEBUG("clamp y %d -> %d", events[i].y, data->pdata->y_min);
+			events[i].y = data->pdata->y_min;
+		}
+
+		/* Detect coordinate corruption: touch near center reported at edge.
+		 * This indicates firmware state corruption (common after rotate/suspend). */
+		if (EVENT_DOWN(events[i].flag)) {
+			int center_x = (data->pdata->x_max + data->pdata->x_min) / 2;
+			int center_y = (data->pdata->y_max + data->pdata->y_min) / 2;
+			int dist_from_center = abs(events[i].x - center_x) + abs(events[i].y - center_y);
+			int max_dist = (data->pdata->x_max + data->pdata->y_max) / 2;
+
+			/* If touch is near center (within 15%) but reported at edge (85%+),
+			 * likely firmware state corruption. Trigger async recovery. */
+			if (dist_from_center < max_dist * 15 / 100 &&
+			    (events[i].x <= data->pdata->x_min + 50 || events[i].x >= data->pdata->x_max - 50 ||
+			     events[i].y <= data->pdata->y_min + 50 || events[i].y >= data->pdata->y_max - 50)) {
+				FTS_INFO("corrupt: center touch at edge (%d,%d), scheduling recovery",
+					 events[i].x, events[i].y);
+				/* Schedule recovery on event workqueue to avoid IRQ context */
+				queue_work(data->event_wq, &data->resume_work);
+			}
 		}
 
 		if (EVENT_DOWN(events[i].flag) && (data->point_num == 0)) {
