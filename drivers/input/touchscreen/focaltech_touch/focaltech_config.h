@@ -132,6 +132,12 @@
 #define FTS_ESDCHECK_EN                         1
 
 /*
+ * ESD check interval - increased to 2000ms to reduce I2C contention
+ * during active touch. 1s was too aggressive.
+ */
+#define ESDCHECK_WAIT_TIME                      2000
+
+/*
  * Glove mode enable
  * 1: enable, 0:disable(default)
  */
@@ -144,8 +150,15 @@
 /*
  * Charger enable
  * 1: enable, 0:disable(default)
+ * DISABLED: charger mode causes ghost touches on Poco F1 due to noisy charger detection.
  */
-#define FTS_CHARGER_EN                          1
+#define FTS_CHARGER_EN                          0
+
+/*
+ * Point report check - auto-release stuck touches after 200ms
+ * if IRQ stops firing. Prevents ghost touches from firmware state corruption.
+ */
+#define FTS_POINT_REPORT_CHECK_EN               1
 
 /*
  * Nodes for tools, please keep enable

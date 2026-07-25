@@ -899,6 +899,17 @@ static int fts_read_touchdata(struct fts_ts_data *data)
 		events[i].area = buf[FTS_TOUCH_AREA_POS + base] >> 4;
 		events[i].p = buf[FTS_TOUCH_PRE_POS + base];
 
+		/* Validate coordinates against display bounds (1080x2246 from DTS).
+		 * Clamp out-of-bounds values to prevent ghost touches at edges. */
+		if (events[i].x > 1080) {
+			FTS_DEBUG("clamp x %d -> 1080", events[i].x);
+			events[i].x = 1080;
+		}
+		if (events[i].y > 2246) {
+			FTS_DEBUG("clamp y %d -> 2246", events[i].y);
+			events[i].y = 2246;
+		}
+
 		if (EVENT_DOWN(events[i].flag) && (data->point_num == 0)) {
 			FTS_INFO("abnormal touch data from fw");
 			return -EIO;
