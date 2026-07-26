@@ -150,9 +150,10 @@
 /*
  * Charger enable
  * 1: enable, 0:disable(default)
- * DISABLED: charger mode causes ghost touches on Poco F1 due to noisy charger detection.
+ * Re-enabled: charger mode adjusts touch sensitivity to compensate for
+ * charger electrical noise. Without it, charging causes ghost touches.
  */
-#define FTS_CHARGER_EN                          0
+#define FTS_CHARGER_EN                          1
 
 /*
  * Point report check - auto-release stuck touches after 200ms
