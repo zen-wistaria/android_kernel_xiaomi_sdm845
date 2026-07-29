@@ -85,6 +85,7 @@ static int fts_ts_suspend(struct device *dev);
 static int fts_ts_resume(struct device *dev);
 static void fts_resume_work(struct work_struct *work);
 static void fts_suspend_work(struct work_struct *work);
+static void fts_fw_recovery_work(struct work_struct *work);
 extern const char *dsi_get_display_name(void);
 
 #if FTS_CHARGER_EN
@@ -862,11 +863,29 @@ static int fts_read_touchdata(struct fts_ts_data *data)
 	}
 	data->point_num = buf[FTS_TOUCH_POINT_NUM] & 0x0F;
 
-	if (data->ic_info.is_incell) {
-		if ((data->point_num == 0x0F) && (buf[1] == 0xFF) && (buf[2] == 0xFF)
-		    && (buf[3] == 0xFF) && (buf[4] == 0xFF) && (buf[5] == 0xFF) && (buf[6] == 0xFF)) {
-			FTS_INFO("touch buff is 0xff, need recovery state");
-			fts_tp_state_recovery(client);
+	/* Check for all-0xFF buffer from FW crash/hang on all panel types.
+	 * incell: point_num == 0x0F + first 6 touch bytes == 0xFF.
+	 * non-incell: point_num != 0 means touch points reported but buffer is 0xFF. */
+	if ((data->point_num == 0x0F) && (buf[1] == 0xFF) && (buf[2] == 0xFF)
+	    && (buf[3] == 0xFF) && (buf[4] == 0xFF) && (buf[5] == 0xFF) && (buf[6] == 0xFF)) {
+		FTS_INFO("touch buff is 0xff, need recovery state");
+		fts_tp_state_recovery(client);
+		return -EIO;
+	} else if (!data->ic_info.is_incell && data->point_num > 0) {
+		/* Non-incell: check all payload bytes for 0xFF */
+		int check;
+		int payload_start = FTS_ONE_TCH_LEN + 3; /* header + 1 touch record */
+		int payload_end = min_t(int, data->pnt_buf_size, payload_start + FTS_ONE_TCH_LEN);
+		bool all_ff = true;
+		for (check = payload_start; check < payload_end; check++) {
+			if (buf[check] != 0xFF) {
+				all_ff = false;
+				break;
+			}
+		}
+		if (all_ff && data->point_num <= max_touch_num) {
+			FTS_INFO("touch buff all-0xff (non-incell), scheduling recovery");
+			queue_work(data->event_wq, &data->fw_recovery_work);
 			return -EIO;
 		}
 	}
@@ -934,8 +953,8 @@ static int fts_read_touchdata(struct fts_ts_data *data)
 			     events[i].y <= data->pdata->y_min + 50 || events[i].y >= data->pdata->y_max - 50)) {
 				FTS_INFO("corrupt: center touch at edge (%d,%d), scheduling recovery",
 					 events[i].x, events[i].y);
-				/* Schedule recovery on event workqueue to avoid IRQ context */
-				queue_work(data->event_wq, &data->resume_work);
+				/* Schedule FW recovery on event workqueue */
+				queue_work(data->event_wq, &data->fw_recovery_work);
 			}
 		}
 
@@ -1907,6 +1926,7 @@ static int fts_ts_probe(struct i2c_client *client, const struct i2c_device_id *i
 	}
 	INIT_WORK(&ts_data->resume_work, fts_resume_work);
 	INIT_WORK(&ts_data->suspend_work, fts_suspend_work);
+	INIT_WORK(&ts_data->fw_recovery_work, fts_fw_recovery_work);
 #ifdef CONFIG_TOUCHSCREEN_FTS_POWER_SUPPLY
 	INIT_WORK(&ts_data->power_supply_work, fts_power_supply_work);
 	ts_data->is_usb_exist = -1;
@@ -2168,8 +2188,8 @@ static int fts_ts_resume(struct device *dev)
 	}
 #endif
 
-	ts_data->suspended = false;
 	fts_irq_enable();
+	ts_data->suspended = false;
 
 	FTS_FUNC_EXIT();
 	return 0;
@@ -2230,6 +2250,39 @@ static void fts_suspend_work(struct work_struct *work)
 	struct fts_ts_data *ts;
 	ts = container_of(work, struct fts_ts_data, suspend_work);
 	fts_ts_suspend(&ts->client->dev);
+}
+
+/*****************************************************************************
+*  Name: fts_fw_recovery_work
+*  Brief: Force hardware reset and state recovery when FW corruption is detected.
+*         Unlike resume_work, this is NOT gated by suspended state — it always
+*         executes a full reset to recover from corrupted firmware state.
+*  Input:
+*  Output:
+*  Return:
+*****************************************************************************/
+static void fts_fw_recovery_work(struct work_struct *work)
+{
+	struct fts_ts_data *ts;
+	ts = container_of(work, struct fts_ts_data, fw_recovery_work);
+
+	FTS_FUNC_ENTER();
+	if (ts->fw_recovering) {
+		FTS_INFO("FW recovery already in progress, skipping");
+		return;
+	}
+	ts->fw_recovering = true;
+
+	fts_irq_disable_sync();
+	fts_release_all_finger();
+
+	FTS_INFO("FW corruption detected - performing hardware reset");
+	fts_reset_proc(200);
+	fts_tp_state_recovery(ts->client);
+
+	fts_irq_enable();
+	ts->fw_recovering = false;
+	FTS_FUNC_EXIT();
 }
 
 
