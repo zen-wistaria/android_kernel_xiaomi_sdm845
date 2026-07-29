@@ -3803,7 +3803,7 @@ out2:
 }
 
 #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-extern struct filename* susfs_get_redirected_path(unsigned long ino);
+extern struct filename* susfs_open_redirect_spoof_do_sys_openat(struct inode *inode);
 #endif
 
 struct file *do_filp_open(int dfd, struct filename *pathname,
@@ -3823,12 +3823,11 @@ struct file *do_filp_open(int dfd, struct filename *pathname,
 	if (unlikely(filp == ERR_PTR(-ESTALE)))
 		filp = path_openat(&nd, op, flags | LOOKUP_REVAL);
 #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-	if (!IS_ERR(filp) && unlikely(filp->f_inode->i_state & INODE_STATE_OPEN_REDIRECT) && current_uid().val < 2000) {
-		fake_pathname = susfs_get_redirected_path(filp->f_inode->i_ino);
-		if (!IS_ERR(fake_pathname)) {
+	if (!IS_ERR(filp) && unlikely(filp->f_inode->i_state & INODE_STATE_OPEN_REDIRECT)) {
+		fake_pathname = susfs_open_redirect_spoof_do_sys_openat(filp->f_inode);
+		if (fake_pathname) {
 			restore_nameidata();
 			filp_close(filp, NULL);
-			// no need to do `putname(pathname);` here as it will be done by calling process
 			set_nameidata(&nd, dfd, fake_pathname);
 			filp = path_openat(&nd, op, flags | LOOKUP_RCU);
 			if (unlikely(filp == ERR_PTR(-ECHILD)))
@@ -5023,6 +5022,17 @@ int generic_readlink(struct dentry *dentry, char __user *buffer, int buflen)
 		if (IS_ERR(link))
 			return PTR_ERR(link);
 	}
+
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+	if (unlikely(inode->i_state & INODE_STATE_OPEN_REDIRECT)) {
+		extern int susfs_open_redirect_spoof_vfs_readlink(struct inode *, char __user *, int);
+		res = susfs_open_redirect_spoof_vfs_readlink(inode, buffer, buflen);
+		if (!res) {
+			do_delayed_call(&done);
+			return buflen < (int)strlen(link) ? buflen : strlen(link);
+		}
+	}
+#endif
 	res = readlink_copy(buffer, buflen, link);
 	do_delayed_call(&done);
 	return res;

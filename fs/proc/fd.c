@@ -64,6 +64,20 @@ static int seq_show(struct seq_file *m, void *v)
 			mnt->mnt_id >= DEFAULT_SUS_MNT_ID) {
 		for (; mnt->mnt_id >= DEFAULT_SUS_MNT_ID; mnt = mnt->mnt_parent) { }
 	}
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+	{
+		int spoofed_mnt_id;
+		unsigned long spoofed_ino;
+		extern int susfs_open_redirect_spoof_seq_show(struct inode *, int *, unsigned long *);
+		if (unlikely(file->f_inode->i_state & INODE_STATE_OPEN_REDIRECT) &&
+		    !susfs_open_redirect_spoof_seq_show(file->f_inode, &spoofed_mnt_id, &spoofed_ino)) {
+			seq_printf(m, "pos:\t%lli\nflags:\t0%o\nmnt_id:\t%i\n",
+				   (long long)file->f_pos, f_flags,
+				   spoofed_mnt_id);
+			goto skip_mnt;
+		}
+	}
+#endif
 	seq_printf(m, "pos:\t%lli\nflags:\t0%o\nmnt_id:\t%i\n",
 			(long long)file->f_pos, f_flags,
 			mnt->mnt_id);
@@ -72,6 +86,11 @@ static int seq_show(struct seq_file *m, void *v)
 		   (long long)file->f_pos, f_flags,
 		   real_mount(file->f_path.mnt)->mnt_id);
 
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+skip_mnt:
+#endif
 #endif
 	show_fd_locks(m, file, files);
 	if (seq_has_overflowed(m))

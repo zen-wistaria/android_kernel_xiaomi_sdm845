@@ -7,6 +7,7 @@
 #include <linux/version.h>
 #ifdef CONFIG_KSU_SUSFS
 #include <linux/susfs_def.h>
+#include <linux/susfs.h>
 #endif
 
 #include <linux/thread_info.h>
@@ -1040,6 +1041,20 @@ int ksu_handle_susfs_cmd(unsigned int cmd, void __user **arg)
         return susfs_add_sus_map(*arg);
     }
 #endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP
+#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
+    case CMD_SUSFS_ADD_TRY_UMOUNT: {
+        return susfs_add_try_umount(*arg);
+    }
+    case CMD_SUSFS_RUN_UMOUNT_FOR_CURRENT_MNT_NS: {
+        susfs_try_umount(current_uid().val);
+        return 0;
+    }
+#endif // #ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
+#ifdef CONFIG_KSU_SUSFS_SUS_SU
+    case CMD_SUSFS_SUS_SU: {
+        return susfs_sus_su(*arg);
+    }
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_SU
     case CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING: {
         susfs_set_avc_log_spoofing(*arg);
         return 0;

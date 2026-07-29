@@ -789,94 +789,278 @@ int susfs_spoof_cmdline_or_bootconfig(struct seq_file *m) {
 /* open_redirect */
 #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 static DEFINE_HASHTABLE(OPEN_REDIRECT_HLIST, 10);
-static int susfs_update_open_redirect_inode(struct st_susfs_open_redirect_hlist *new_entry) {
-	struct path path_target;
-	struct inode *inode_target;
-	int err = 0;
-
-	err = kern_path(new_entry->target_pathname, LOOKUP_FOLLOW, &path_target);
-	if (err) {
-		SUSFS_LOGE("Failed opening file '%s'\n", new_entry->target_pathname);
-		return err;
-	}
-
-	inode_target = d_inode(path_target.dentry);
-	if (!inode_target) {
-		SUSFS_LOGE("inode_target is NULL\n");
-		err = 1;
-		goto out_path_put_target;
-	}
-
-	spin_lock(&inode_target->i_lock);
-	inode_target->i_state |= INODE_STATE_OPEN_REDIRECT;
-	spin_unlock(&inode_target->i_lock);
-
-out_path_put_target:
-	path_put(&path_target);
-	return err;
-}
+static DEFINE_MUTEX(susfs_mutex_lock_open_redirect);
+static DEFINE_SRCU(susfs_srcu_open_redirect);
 
 int susfs_add_open_redirect(struct st_susfs_open_redirect* __user user_info) {
-	struct st_susfs_open_redirect info;
-	struct st_susfs_open_redirect_hlist *new_entry, *tmp_entry;
-	struct hlist_node *tmp_node;
+	struct st_susfs_open_redirect info = {0};
+	struct st_susfs_open_redirect_hlist *new_entry_target = NULL, *new_entry_redirected = NULL;
+	struct st_susfs_open_redirect_hlist *tmp_entry = NULL;
+	struct hlist_node *tmp_hlist_node;
+	struct path target_path, redirected_path;
+	struct inode *target_inode, *redirected_inode;
 	int bkt;
-	bool update_hlist = false;
+	bool is_dup = false;
 
 	if (copy_from_user(&info, user_info, sizeof(info))) {
 		SUSFS_LOGE("failed copying from userspace\n");
-		return 1;
+		return -EFAULT;
 	}
 
-	spin_lock(&susfs_spin_lock);
-	hash_for_each_safe(OPEN_REDIRECT_HLIST, bkt, tmp_node, tmp_entry, node) {
-		if (!strcmp(tmp_entry->target_pathname, info.target_pathname)) {
+	if (*info.target_pathname == '\0') {
+		SUSFS_LOGE("empty target_pathname\n");
+		return -EINVAL;
+	}
+
+	if (info.uid_scheme < UID_NON_APP_PROC || info.uid_scheme > UID_UMOUNTED_PROC) {
+		SUSFS_LOGE("invalid uid_scheme: %d\n", info.uid_scheme);
+		return -EINVAL;
+	}
+
+	if (kern_path(info.redirected_pathname, 0, &redirected_path)) {
+		SUSFS_LOGE("failed opening redirected '%s'\n", info.redirected_pathname);
+		return -ENOENT;
+	}
+
+	if (kern_path(info.target_pathname, 0, &target_path)) {
+		SUSFS_LOGE("failed opening target '%s'\n", info.target_pathname);
+		path_put(&redirected_path);
+		return -ENOENT;
+	}
+
+	redirected_inode = d_inode(redirected_path.dentry);
+	target_inode = d_inode(target_path.dentry);
+	if (!redirected_inode || !target_inode) {
+		SUSFS_LOGE("inode is NULL\n");
+		path_put(&target_path);
+		path_put(&redirected_path);
+		return -ENOENT;
+	}
+
+#ifndef FUSE_SUPER_MAGIC
+#define FUSE_SUPER_MAGIC 0x65735546
+#endif
+	if (redirected_inode->i_sb->s_magic == FUSE_SUPER_MAGIC ||
+	    target_inode->i_sb->s_magic == FUSE_SUPER_MAGIC) {
+		SUSFS_LOGE("FUSE fs not supported for open_redirect\n");
+		path_put(&target_path);
+		path_put(&redirected_path);
+		return -EINVAL;
+	}
+
+	new_entry_target = kzalloc(sizeof(struct st_susfs_open_redirect_hlist), GFP_KERNEL);
+	new_entry_redirected = kzalloc(sizeof(struct st_susfs_open_redirect_hlist), GFP_KERNEL);
+	if (!new_entry_target || !new_entry_redirected) {
+		kfree(new_entry_target);
+		kfree(new_entry_redirected);
+		path_put(&target_path);
+		path_put(&redirected_path);
+		return -ENOMEM;
+	}
+
+	/* Populate target entry (forward lookup) */
+	new_entry_target->target_ino = target_inode->i_ino;
+	new_entry_target->target_dev = target_inode->i_sb->s_dev;
+	new_entry_target->redirected_ino = redirected_inode->i_ino;
+	new_entry_target->redirected_dev = redirected_inode->i_sb->s_dev;
+	new_entry_target->info.uid_scheme = info.uid_scheme;
+	new_entry_target->reversed_lookup_only = false;
+	new_entry_target->spoofed_mnt_id = real_mount(target_path.mnt)->mnt_id;
+	(void)vfs_statfs(&target_path, &new_entry_target->spoofed_kstatfs);
+	memcpy(&new_entry_target->info, &info, sizeof(info));
+
+	/* Populate redirected entry (reversed lookup for readlink/statfs) */
+	new_entry_redirected->target_ino = redirected_inode->i_ino;
+	new_entry_redirected->target_dev = redirected_inode->i_sb->s_dev;
+	new_entry_redirected->redirected_ino = target_inode->i_ino;
+	new_entry_redirected->redirected_dev = target_inode->i_sb->s_dev;
+	new_entry_redirected->info.uid_scheme = info.uid_scheme;
+	new_entry_redirected->reversed_lookup_only = true;
+	new_entry_redirected->spoofed_mnt_id = real_mount(target_path.mnt)->mnt_id;
+	memcpy(&new_entry_redirected->spoofed_kstatfs, &new_entry_target->spoofed_kstatfs, sizeof(struct kstatfs));
+	strscpy(new_entry_redirected->info.target_pathname, info.redirected_pathname, SUSFS_MAX_LEN_PATHNAME - 1);
+	strscpy(new_entry_redirected->info.redirected_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME - 1);
+
+	/* Remove existing entries for same target path */
+	mutex_lock(&susfs_mutex_lock_open_redirect);
+	hash_for_each_safe(OPEN_REDIRECT_HLIST, bkt, tmp_hlist_node, tmp_entry, node) {
+		if (!strcmp(tmp_entry->info.target_pathname, info.target_pathname)) {
 			hash_del(&tmp_entry->node);
 			kfree(tmp_entry);
-			update_hlist = true;
-			break;
+			is_dup = true;
 		}
 	}
-	spin_unlock(&susfs_spin_lock);
-
-	new_entry = kmalloc(sizeof(struct st_susfs_open_redirect_hlist), GFP_KERNEL);
-	if (!new_entry) {
-		SUSFS_LOGE("no enough memory\n");
-		return 1;
+	if (is_dup) {
+		hash_for_each_safe(OPEN_REDIRECT_HLIST, bkt, tmp_hlist_node, tmp_entry, node) {
+			if (!strcmp(tmp_entry->info.target_pathname, info.redirected_pathname)) {
+				hash_del(&tmp_entry->node);
+				kfree(tmp_entry);
+			}
+		}
 	}
 
-	new_entry->target_ino = info.target_ino;
-	strncpy(new_entry->target_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME-1);
-	strncpy(new_entry->redirected_pathname, info.redirected_pathname, SUSFS_MAX_LEN_PATHNAME-1);
-	if (susfs_update_open_redirect_inode(new_entry)) {
-		SUSFS_LOGE("failed adding path '%s' to OPEN_REDIRECT_HLIST\n", new_entry->target_pathname);
-		kfree(new_entry);
-		return 1;
-	}
+	hash_add(OPEN_REDIRECT_HLIST, &new_entry_target->node, new_entry_target->target_ino);
+	hash_add(OPEN_REDIRECT_HLIST, &new_entry_redirected->node, new_entry_redirected->target_ino);
 
-	spin_lock(&susfs_spin_lock);
-	hash_add(OPEN_REDIRECT_HLIST, &new_entry->node, info.target_ino);
-	if (update_hlist) {
-		SUSFS_LOGI("target_ino: '%lu', target_pathname: '%s', redirected_pathname: '%s', is successfully updated to OPEN_REDIRECT_HLIST\n",
-				new_entry->target_ino, new_entry->target_pathname, new_entry->redirected_pathname);	
-	} else {
-		SUSFS_LOGI("target_ino: '%lu', target_pathname: '%s' redirected_pathname: '%s', is successfully added to OPEN_REDIRECT_HLIST\n",
-				new_entry->target_ino, new_entry->target_pathname, new_entry->redirected_pathname);
-	}
-	spin_unlock(&susfs_spin_lock);
+	/* Mark both inodes */
+	spin_lock(&target_inode->i_lock);
+	target_inode->i_state |= INODE_STATE_OPEN_REDIRECT;
+	spin_unlock(&target_inode->i_lock);
+	spin_lock(&redirected_inode->i_lock);
+	redirected_inode->i_state |= INODE_STATE_OPEN_REDIRECT;
+	spin_unlock(&redirected_inode->i_lock);
+
+	mutex_unlock(&susfs_mutex_lock_open_redirect);
+
+	SUSFS_LOGI("open_redirect: '%s'<->'%s' uid_scheme=%d\n",
+		   info.target_pathname, info.redirected_pathname, info.uid_scheme);
+
+	path_put(&target_path);
+	path_put(&redirected_path);
 	return 0;
 }
 
-struct filename* susfs_get_redirected_path(unsigned long ino) {
+struct filename* susfs_open_redirect_spoof_do_sys_openat(struct inode *inode) {
+	struct st_susfs_open_redirect_hlist *entry;
+	struct filename *new_filename = NULL;
+
+	if (!inode) return NULL;
+
+	hash_for_each_possible(OPEN_REDIRECT_HLIST, entry, node, inode->i_ino) {
+		if (entry->reversed_lookup_only ||
+		    entry->target_dev != inode->i_sb->s_dev)
+			continue;
+
+		/* UID scheme check */
+		switch (entry->info.uid_scheme) {
+		case UID_NON_APP_PROC:
+			if (current_uid().val % 100000 < 10000)
+				break;
+			goto not_match;
+		case UID_ROOT_PROC_EXCEPT_SU_PROC:
+			if (current_uid().val == 0 && !susfs_is_current_ksu_domain())
+				break;
+			goto not_match;
+		case UID_NON_SU_PROC:
+			if (!susfs_is_current_ksu_domain())
+				break;
+			goto not_match;
+		case UID_UMOUNTED_APP_PROC:
+			if (susfs_is_current_proc_umounted_app())
+				break;
+			goto not_match;
+		case UID_UMOUNTED_PROC:
+			if (susfs_is_current_proc_umounted())
+				break;
+			goto not_match;
+		default:
+			goto not_match;
+		}
+		SUSFS_LOGI("open_redirect: '%s'->'%s' uid_scheme=%d\n",
+			   entry->info.target_pathname, entry->info.redirected_pathname,
+			   entry->info.uid_scheme);
+		new_filename = getname_kernel(entry->info.redirected_pathname);
+		return new_filename;
+	not_match:
+		/* continue searching */;
+	}
+	return NULL;
+}
+
+int susfs_open_redirect_spoof_vfs_readlink(struct inode *inode, char __user *buffer, int buflen) {
 	struct st_susfs_open_redirect_hlist *entry;
 
-	hash_for_each_possible(OPEN_REDIRECT_HLIST, entry, node, ino) {
-		if (entry->target_ino == ino) {
-			SUSFS_LOGI("Redirect for ino: %lu\n", ino);
-			return getname_kernel(entry->redirected_pathname);
-		}
+	if (!inode) return -ENOENT;
+
+	hash_for_each_possible(OPEN_REDIRECT_HLIST, entry, node, inode->i_ino) {
+		if (!entry->reversed_lookup_only ||
+		    entry->target_dev != inode->i_sb->s_dev)
+			continue;
+
+		SUSFS_LOGI("readlink spoof: '%s'->'%s'\n",
+			   entry->info.target_pathname, entry->info.redirected_pathname);
+		if (strlen(entry->info.redirected_pathname) >= (unsigned long)buflen)
+			return -ENAMETOOLONG;
+		if (copy_to_user(buffer, entry->info.redirected_pathname,
+				 strlen(entry->info.redirected_pathname)))
+			return -EFAULT;
+		return 0;
 	}
-	return ERR_PTR(-ENOENT);
+	return -ENOENT;
+}
+
+int susfs_open_redirect_spoof_do_proc_readlink(struct inode *inode, char *tmp_buf, int buflen) {
+	struct st_susfs_open_redirect_hlist *entry;
+
+	if (!inode) return -ENOENT;
+
+	hash_for_each_possible(OPEN_REDIRECT_HLIST, entry, node, inode->i_ino) {
+		if (!entry->reversed_lookup_only ||
+		    entry->target_dev != inode->i_sb->s_dev)
+			continue;
+
+		SUSFS_LOGI("proc_readlink spoof: '%s'->'%s'\n",
+			   entry->info.target_pathname, entry->info.redirected_pathname);
+		if (strlen(entry->info.redirected_pathname) >= (unsigned long)buflen)
+			return -ENAMETOOLONG;
+		strscpy(tmp_buf, entry->info.redirected_pathname, SUSFS_MAX_LEN_PATHNAME - 1);
+		return 0;
+	}
+	return -ENOENT;
+}
+
+int susfs_open_redirect_spoof_vfs_statfs(struct inode *inode, struct kstatfs *buf) {
+	struct st_susfs_open_redirect_hlist *entry;
+
+	if (!inode) return -EINVAL;
+
+	hash_for_each_possible(OPEN_REDIRECT_HLIST, entry, node, inode->i_ino) {
+		if (!entry->reversed_lookup_only ||
+		    entry->target_dev != inode->i_sb->s_dev)
+			continue;
+
+		SUSFS_LOGI("statfs spoof for: '%s'\n", entry->info.target_pathname);
+		memcpy(buf, &entry->spoofed_kstatfs, sizeof(struct kstatfs));
+		return 0;
+	}
+	return -EINVAL;
+}
+
+int susfs_open_redirect_spoof_seq_show(struct inode *inode, int *out_mnt_id, unsigned long *out_ino) {
+	struct st_susfs_open_redirect_hlist *entry;
+
+	if (!inode) return -EINVAL;
+
+	hash_for_each_possible(OPEN_REDIRECT_HLIST, entry, node, inode->i_ino) {
+		if (!entry->reversed_lookup_only ||
+		    entry->target_dev != inode->i_sb->s_dev)
+			continue;
+
+		*out_mnt_id = entry->spoofed_mnt_id;
+		*out_ino = entry->redirected_ino;
+		return 0;
+	}
+	return -EINVAL;
+}
+
+int susfs_open_redirect_spoof_show_map_vma(struct inode *inode, unsigned long *out_ino, dev_t *out_dev, char *spoofed_name) {
+	struct st_susfs_open_redirect_hlist *entry;
+
+	if (!inode) return -EINVAL;
+	if (!spoofed_name) return -EINVAL;
+
+	hash_for_each_possible(OPEN_REDIRECT_HLIST, entry, node, inode->i_ino) {
+		if (!entry->reversed_lookup_only ||
+		    entry->target_dev != inode->i_sb->s_dev)
+			continue;
+
+		SUSFS_LOGI("maps spoof for: '%s'\n", entry->info.target_pathname);
+		*out_ino = entry->redirected_ino;
+		*out_dev = entry->redirected_dev;
+		strscpy(spoofed_name, entry->info.redirected_pathname, SUSFS_MAX_LEN_PATHNAME - 1);
+		return 0;
+	}
+	return -EINVAL;
 }
 #endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 

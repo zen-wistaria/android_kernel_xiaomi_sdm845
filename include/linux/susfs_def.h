@@ -10,6 +10,15 @@
 /* ENUM */
 /********/
 /* shared with userspace ksu_susfs tool */
+
+/* UID_SCHEME for open_redirect — copied from upstream SUSFS v2.2.0 */
+enum UID_SCHEME {
+	UID_NON_APP_PROC = 0,
+	UID_ROOT_PROC_EXCEPT_SU_PROC,
+	UID_NON_SU_PROC,
+	UID_UMOUNTED_APP_PROC,
+	UID_UMOUNTED_PROC,
+};
 #define CMD_SUSFS_ADD_SUS_PATH 0x55550
 #define CMD_SUSFS_ADD_SUS_MOUNT 0x55560
 #define CMD_SUSFS_ADD_SUS_KSTAT 0x55570
@@ -94,6 +103,11 @@ static inline bool susfs_is_current_proc_umounted_app(void) {
 #define SUSFS_IS_INODE_SUS_MAP(inode) \
 	inode && inode->i_mapping && \
 	unlikely(test_bit(AS_FLAGS_SUS_MAP, &inode->i_mapping->flags)) && \
+	susfs_is_current_proc_umounted_app()
+
+#define SUSFS_IS_INODE_OPEN_REDIRECT(inode) \
+	inode && \
+	unlikely(inode->i_state & INODE_STATE_OPEN_REDIRECT) && \
 	susfs_is_current_proc_umounted_app()
 
 #define MAGIC_MOUNT_WORKDIR "/debug_ramdisk/workdir"

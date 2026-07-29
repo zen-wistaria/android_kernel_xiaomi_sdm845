@@ -67,7 +67,18 @@
 #define CMD_SUSFS_SHOW_SUS_SU_WORKING_MODE 0x555e4
 #define CMD_SUSFS_IS_SUS_SU_READY 0x555f0
 #define CMD_SUSFS_SUS_SU 0x60000
+#define CMD_SUSFS_ADD_SUS_PATH_LOOP 0x555c1
+#define CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS 0x555c2
 #define CMD_SUSFS_ADD_SUS_MAP 0x555c3
+#define CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING 0x555c4
+
+enum UID_SCHEME {
+	UID_NON_APP_PROC = 0,
+	UID_ROOT_PROC_EXCEPT_SU_PROC,
+	UID_NON_SU_PROC,
+	UID_UMOUNTED_APP_PROC,
+	UID_UMOUNTED_PROC,
+};
 
 /* KSTAT per-field spoof flags must match kernel include/linux/susfs_def.h */
 #ifndef BIT
@@ -165,6 +176,8 @@ struct st_susfs_open_redirect {
 	unsigned long           target_ino;
 	char                    target_pathname[SUSFS_MAX_LEN_PATHNAME];
 	char                    redirected_pathname[SUSFS_MAX_LEN_PATHNAME];
+	int                     uid_scheme;
+	int                     err;
 };
 
 struct st_sus_su {
@@ -311,8 +324,23 @@ static void print_help(void) {
 	log("        set_cmdline_or_bootconfig </path/to/fake_cmdline_file/or/fake_bootconfig_file>\n");
 	log("         |--> Spoof the output of /proc/cmdline (non-gki) or /proc/bootconfig (gki) from a text file\n");
 	log("\n");
-	log("        add_open_redirect </target/path> </redirected/path>\n");
+	log("        add_open_redirect </target/path> </redirected/path> <uid_scheme>\n");
 	log("         |--> Redirect the target path to be opened with user defined path\n");
+	log("         |--> <uid_scheme>\n");
+	log("             |--> 0: Effective for non-app processes (uid < 10000)\n");
+	log("             |--> 1: Effective for root but not su domain\n");
+	log("             |--> 2: Effective for non-su processes\n");
+	log("             |--> 3: Effective for umounted app process (uid >= 10000)\n");
+	log("             |--> 4: Effective for umounted processes\n");
+	log("\n");
+	log("        add_sus_path_loop </path/of/file_or_directory>\n");
+	log("         |--> Like add_sus_path but re-flags it on every app spawn\n");
+	log("\n");
+	log("        hide_sus_mnts_for_non_su_procs <0|1>\n");
+	log("         |--> Hide all sus mounts from non-su processes\n");
+	log("\n");
+	log("        enable_avc_log_spoofing <0|1>\n");
+	log("         |--> Enable/disable AVC log spoofing for KSU domain\n");
 	log("\n");
 	log("        show <version|enabled_features|variant>\n");
 	log("         |--> version: show the current susfs version implemented in kernel\n");
@@ -659,12 +687,46 @@ int main(int argc, char *argv[]) {
 		prctl(KERNEL_SU_OPTION, CMD_SUSFS_ADD_SUS_MAP, &info, NULL, &error);
 		PRT_MSG_IF_OPERATION_NOT_SUPPORTED(error, CMD_SUSFS_ADD_SUS_MAP);
 		return error;
-	} else if (argc == 4 && !strcmp(argv[1], "add_open_redirect")) {
+	} else if (argc == 3 && !strcmp(argv[1], "add_sus_path_loop")) {
+		struct st_susfs_sus_path info = {0};
+		if (*argv[2] == '\0') {
+			log("[-] argv[2] is empty\n");
+			return 1;
+		}
+		strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME-1);
+		prctl(KERNEL_SU_OPTION, CMD_SUSFS_ADD_SUS_PATH_LOOP, &info, NULL, &error);
+		PRT_MSG_IF_OPERATION_NOT_SUPPORTED(error, CMD_SUSFS_ADD_SUS_PATH_LOOP);
+		return error;
+	} else if (argc == 3 && !strcmp(argv[1], "hide_sus_mnts_for_non_su_procs")) {
+		if (strcmp(argv[2], "0") && strcmp(argv[2], "1")) {
+			print_help();
+			return 1;
+		}
+		int enabled_val = atoi(argv[2]);
+		prctl(KERNEL_SU_OPTION, CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS, &enabled_val, NULL, &error);
+		PRT_MSG_IF_OPERATION_NOT_SUPPORTED(error, CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS);
+		return error;
+	} else if (argc == 3 && !strcmp(argv[1], "enable_avc_log_spoofing")) {
+		if (strcmp(argv[2], "0") && strcmp(argv[2], "1")) {
+			print_help();
+			return 1;
+		}
+		prctl(KERNEL_SU_OPTION, CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING, atoi(argv[2]), NULL, &error);
+		PRT_MSG_IF_OPERATION_NOT_SUPPORTED(error, CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING);
+		return error;
+	} else if (argc == 5 && !strcmp(argv[1], "add_open_redirect")) {
 		struct st_susfs_open_redirect info;
 		struct stat sb;
 		char target_pathname[PATH_MAX], *p_abs_target_pathname;
 		char redirected_pathname[PATH_MAX], *p_abs_redirected_pathname;
+		char* endptr;
+		long uid_scheme;
 
+		uid_scheme = strtol(argv[4], &endptr, 10);
+		if (*endptr != '\0' || uid_scheme < 0 || uid_scheme > 4) {
+			log("[-] invalid uid_scheme, must be 0-4\n");
+			return 1;
+		}
 		p_abs_target_pathname = realpath(argv[2], target_pathname);
 		if (p_abs_target_pathname == NULL) {
 			perror("realpath");
@@ -677,6 +739,7 @@ int main(int argc, char *argv[]) {
 			return 1;
 		}
 		strncpy(info.redirected_pathname, redirected_pathname, SUSFS_MAX_LEN_PATHNAME-1);
+		info.uid_scheme = uid_scheme;
 		if (get_file_stat(info.target_pathname, &sb)) {
 			log("[-] Failed to get stat from path: '%s'\n", info.target_pathname);
 			return 1;

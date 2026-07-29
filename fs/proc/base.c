@@ -63,6 +63,9 @@
 #include <linux/namei.h>
 #include <linux/mnt_namespace.h>
 #include <linux/mm.h>
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+#include <linux/susfs_def.h>
+#endif
 #include <linux/swap.h>
 #include <linux/rcupdate.h>
 #include <linux/kallsyms.h>
@@ -1841,6 +1844,21 @@ static int do_proc_readlink(struct path *path, char __user *buffer, int buflen)
 		len = buflen;
 	if (copy_to_user(buffer, pathname, len))
 		len = -EFAULT;
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+	if (likely(len > 0) && path->dentry && path->dentry->d_inode &&
+	    unlikely(path->dentry->d_inode->i_state & INODE_STATE_OPEN_REDIRECT)) {
+		extern int susfs_open_redirect_spoof_do_proc_readlink(struct inode *, char *, int);
+		char tmp_buf[256] = {0};
+		if (!susfs_open_redirect_spoof_do_proc_readlink(path->dentry->d_inode, tmp_buf, 256)) {
+			int spoof_len = strlen(tmp_buf);
+			if (spoof_len > buflen) spoof_len = buflen;
+			clear_user(buffer, buflen);
+			if (copy_to_user(buffer, tmp_buf, spoof_len))
+				spoof_len = -EFAULT;
+			len = spoof_len;
+		}
+	}
+#endif
  out:
 	free_page((unsigned long)tmp);
 	return len;

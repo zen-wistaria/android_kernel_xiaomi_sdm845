@@ -7,6 +7,7 @@
 #include <linux/hashtable.h>
 #include <linux/path.h>
 #include <linux/susfs_def.h>
+#include <linux/statfs.h>
 
 #define SUSFS_VERSION "v2.0.0"
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
@@ -106,12 +107,19 @@ struct st_susfs_open_redirect {
 	unsigned long                    target_ino;
 	char                             target_pathname[SUSFS_MAX_LEN_PATHNAME];
 	char                             redirected_pathname[SUSFS_MAX_LEN_PATHNAME];
+	int                              uid_scheme;
+	int                              err;
 };
 
 struct st_susfs_open_redirect_hlist {
 	unsigned long                    target_ino;
-	char                             target_pathname[SUSFS_MAX_LEN_PATHNAME];
-	char                             redirected_pathname[SUSFS_MAX_LEN_PATHNAME];
+	unsigned long                    target_dev;
+	unsigned long                    redirected_ino;
+	unsigned long                    redirected_dev;
+	int                              spoofed_mnt_id;
+	struct kstatfs                   spoofed_kstatfs;
+	struct st_susfs_open_redirect    info;
+	bool                             reversed_lookup_only;
 	struct hlist_node                node;
 };
 #endif
@@ -176,6 +184,12 @@ int susfs_spoof_cmdline_or_bootconfig(struct seq_file *m);
 #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 int susfs_add_open_redirect(struct st_susfs_open_redirect* __user user_info);
 struct filename* susfs_get_redirected_path(unsigned long ino);
+struct filename* susfs_open_redirect_spoof_do_sys_openat(struct inode *inode);
+int susfs_open_redirect_spoof_vfs_readlink(struct inode *inode, char __user *buffer, int buflen);
+int susfs_open_redirect_spoof_do_proc_readlink(struct inode *inode, char *tmp_buf, int buflen);
+int susfs_open_redirect_spoof_vfs_statfs(struct inode *inode, struct kstatfs *buf);
+int susfs_open_redirect_spoof_seq_show(struct inode *inode, int *out_mnt_id, unsigned long *out_ino);
+int susfs_open_redirect_spoof_show_map_vma(struct inode *inode, unsigned long *out_ino, dev_t *out_dev, char *spoofed_name);
 #endif
 /* sus_su */
 #ifdef CONFIG_KSU_SUSFS_SUS_SU

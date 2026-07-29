@@ -64,6 +64,13 @@ static int statfs_by_dentry(struct dentry *dentry, struct kstatfs *buf)
 	retval = dentry->d_sb->s_op->statfs(dentry, buf);
 	if (retval == 0 && buf->f_frsize == 0)
 		buf->f_frsize = buf->f_bsize;
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+	if (likely(retval == 0) &&
+	    unlikely(dentry->d_inode->i_state & INODE_STATE_OPEN_REDIRECT)) {
+		extern int susfs_open_redirect_spoof_vfs_statfs(struct inode *, struct kstatfs *);
+		susfs_open_redirect_spoof_vfs_statfs(dentry->d_inode, buf);
+	}
+#endif
 	return retval;
 }
 
