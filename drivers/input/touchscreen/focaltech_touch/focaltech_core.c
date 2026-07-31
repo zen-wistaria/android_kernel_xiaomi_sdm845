@@ -968,6 +968,53 @@ static int fts_read_touchdata(struct fts_ts_data *data)
 		return -EIO;
 	}
 
+	/* Detect stuck-axis collapse on X only. This is the landscape glitch:
+	 * every touch collapses to the left edge (X ~ 0 for all fingers) while
+	 * Y keeps spreading across the full screen.
+	 *
+	 * Constraints to avoid false positives on real game grips (two thumbs
+	 * at the bottom: X spans left+right wide but Y stays narrow near bottom):
+	 *  - only X collapse is checked, never Y (narrow Y = normal game grip)
+	 *  - the collapsed X band must sit at a physical edge (within EDGE_PX
+	 *    of x_min/x_max), since a collapsed-X glitch always reports near
+	 *    the left edge
+	 *  - at least 2 ACTIVE (DOWN/CONTACT) touches, spanning >50% of Y range
+	 *
+	 * UP events carry stale coordinates and must not affect the check. */
+	if (data->touch_point >= 2) {
+		int xmin = data->pdata->x_max, xmax = data->pdata->x_min;
+		int ymin = data->pdata->y_max, ymax = data->pdata->y_min;
+		int x_span, y_span, y_range;
+		int active_cnt = 0;
+		int edge_px;
+		int j;
+
+		for (j = 0; j < data->touch_point; j++) {
+			if (!EVENT_DOWN(events[j].flag))
+				continue;
+			active_cnt++;
+			if (events[j].x < xmin) xmin = events[j].x;
+			if (events[j].x > xmax) xmax = events[j].x;
+			if (events[j].y < ymin) ymin = events[j].y;
+			if (events[j].y > ymax) ymax = events[j].y;
+		}
+		x_span = xmax - xmin;
+		y_span = ymax - ymin;
+		y_range = data->pdata->y_max - data->pdata->y_min;
+		edge_px = (data->pdata->x_max - data->pdata->x_min) * 6 / 100;
+
+		if (active_cnt >= 2 &&
+		    x_span <= edge_px &&                 /* collapsed X band */
+		    (xmin <= data->pdata->x_min + 60 ||  /* at left edge */
+		     xmax >= data->pdata->x_max - 60) && /* or right edge */
+		    y_span >= y_range * 50 / 100) {      /* Y spans wide */
+			FTS_INFO("stuck-axis: %d active touches x[%d..%d] y[%d..%d], scheduling recovery",
+				 active_cnt, xmin, xmax, ymin, ymax);
+			queue_work(data->event_wq, &data->fw_recovery_work);
+			return -EIO;
+		}
+	}
+
 	return 0;
 }
 
