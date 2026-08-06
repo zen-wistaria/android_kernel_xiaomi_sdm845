@@ -361,19 +361,7 @@ int fts_ex_mode_init(struct i2c_client *client)
 
 	g_fts_mode_flag.fts_glove_mode_flag = false;
 	g_fts_mode_flag.fts_cover_mode_flag = false;
-#if FTS_CHARGER_EN
-	/* Charger mode ON by default. The power-supply notifier path is
-	 * unreliable on SDM845 (power_supply_is_system_supplied() often
-	 * returns false for USB/PPS chargers), so the register is never
-	 * written and the panel stays noise-sensitive while charging.
-	 * Activating it unconditionally compensates charger noise; it only
-	 * raises baseline sensitivity and is safe for normal use. It is
-	 * re-applied on every reset via fts_ex_mode_recovery(). */
-	g_fts_mode_flag.fts_charger_mode_flag = true;
-	fts_enter_charger_mode(client, true);
-#else
 	g_fts_mode_flag.fts_charger_mode_flag = false;
-#endif
 
 	err = sysfs_create_group(&client->dev.kobj, &fts_touch_mode_group);
 	if (0 != err) {

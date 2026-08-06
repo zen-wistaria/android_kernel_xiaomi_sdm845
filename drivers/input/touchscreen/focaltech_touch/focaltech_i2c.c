@@ -41,8 +41,7 @@
 /*****************************************************************************
 * Private constant and macro definitions using #define
 *****************************************************************************/
-#define I2C_RETRY_NUMBER        5
-#define I2C_RETRY_DELAY_MS      2
+#define I2C_RETRY_NUMBER        3
 /*****************************************************************************
 * Private enumerations, structures and unions using typedef
 *****************************************************************************/
@@ -98,8 +97,6 @@ int fts_i2c_read(struct i2c_client *client, char *writebuf, int writelen, char *
 				ret = i2c_transfer(client->adapter, msgs, 2);
 				if (ret < 0) {
 					FTS_ERROR("[IIC]: i2c_transfer(write) error, ret=%d!!", ret);
-					if (i < I2C_RETRY_NUMBER - 1)
-						msleep(I2C_RETRY_DELAY_MS);
 				} else
 					break;
 			}
@@ -116,8 +113,6 @@ int fts_i2c_read(struct i2c_client *client, char *writebuf, int writelen, char *
 				ret = i2c_transfer(client->adapter, msgs, 1);
 				if (ret < 0) {
 					FTS_ERROR("[IIC]: i2c_transfer(read) error, ret=%d!!", ret);
-					if (i < I2C_RETRY_NUMBER - 1)
-						msleep(I2C_RETRY_DELAY_MS);
 				} else
 					break;
 			}
@@ -154,8 +149,6 @@ int fts_i2c_write(struct i2c_client *client, char *writebuf, int writelen)
 			ret = i2c_transfer(client->adapter, msgs, 1);
 			if (ret < 0) {
 				FTS_ERROR("%s: i2c_transfer(write) error, ret=%d", __func__, ret);
-				if (i < I2C_RETRY_NUMBER - 1)
-					msleep(I2C_RETRY_DELAY_MS);
 			} else
 				break;
 		}

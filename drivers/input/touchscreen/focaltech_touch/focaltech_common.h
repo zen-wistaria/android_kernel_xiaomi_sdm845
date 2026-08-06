@@ -121,8 +121,8 @@
 /*
  * point report check
  * default: disable
- * Moved to focaltech_config.h for centralized configuration
  */
+#define FTS_POINT_REPORT_CHECK_EN               0
 
 /*****************************************************************************
 * Global variable or extern global variabls/functions

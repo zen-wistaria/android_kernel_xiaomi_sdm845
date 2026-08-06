@@ -156,7 +156,6 @@ struct fts_ts_data {
 	int irq;
 	bool suspended;
 	bool fw_loading;
-	bool fw_recovering;
 	bool irq_disabled;
 #if FTS_POWER_SOURCE_CUST_EN
 	bool power_disabled;
@@ -180,7 +179,6 @@ struct fts_ts_data {
 	bool fw_forceupdate;
 	struct work_struct suspend_work;
 	struct work_struct resume_work;
-	struct work_struct fw_recovery_work;
 #ifdef CONFIG_TOUCHSCREEN_FTS_POWER_SUPPLY
 	struct work_struct power_supply_work;
 	int is_usb_exist;

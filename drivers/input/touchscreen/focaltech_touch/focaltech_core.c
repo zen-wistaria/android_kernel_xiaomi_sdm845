@@ -85,7 +85,6 @@ static int fts_ts_suspend(struct device *dev);
 static int fts_ts_resume(struct device *dev);
 static void fts_resume_work(struct work_struct *work);
 static void fts_suspend_work(struct work_struct *work);
-static void fts_fw_recovery_work(struct work_struct *work);
 extern const char *dsi_get_display_name(void);
 
 #if FTS_CHARGER_EN
@@ -863,29 +862,11 @@ static int fts_read_touchdata(struct fts_ts_data *data)
 	}
 	data->point_num = buf[FTS_TOUCH_POINT_NUM] & 0x0F;
 
-	/* Check for all-0xFF buffer from FW crash/hang on all panel types.
-	 * incell: point_num == 0x0F + first 6 touch bytes == 0xFF.
-	 * non-incell: point_num != 0 means touch points reported but buffer is 0xFF. */
-	if ((data->point_num == 0x0F) && (buf[1] == 0xFF) && (buf[2] == 0xFF)
-	    && (buf[3] == 0xFF) && (buf[4] == 0xFF) && (buf[5] == 0xFF) && (buf[6] == 0xFF)) {
-		FTS_INFO("touch buff is 0xff, need recovery state");
-		fts_tp_state_recovery(client);
-		return -EIO;
-	} else if (!data->ic_info.is_incell && data->point_num > 0) {
-		/* Non-incell: check all payload bytes for 0xFF */
-		int check;
-		int payload_start = FTS_ONE_TCH_LEN + 3; /* header + 1 touch record */
-		int payload_end = min_t(int, data->pnt_buf_size, payload_start + FTS_ONE_TCH_LEN);
-		bool all_ff = true;
-		for (check = payload_start; check < payload_end; check++) {
-			if (buf[check] != 0xFF) {
-				all_ff = false;
-				break;
-			}
-		}
-		if (all_ff && data->point_num <= max_touch_num) {
-			FTS_INFO("touch buff all-0xff (non-incell), scheduling recovery");
-			queue_work(data->event_wq, &data->fw_recovery_work);
+	if (data->ic_info.is_incell) {
+		if ((data->point_num == 0x0F) && (buf[1] == 0xFF) && (buf[2] == 0xFF)
+		    && (buf[3] == 0xFF) && (buf[4] == 0xFF) && (buf[5] == 0xFF) && (buf[6] == 0xFF)) {
+			FTS_INFO("touch buff is 0xff, need recovery state");
+			fts_tp_state_recovery(client);
 			return -EIO;
 		}
 	}
@@ -918,46 +899,6 @@ static int fts_read_touchdata(struct fts_ts_data *data)
 		events[i].area = buf[FTS_TOUCH_AREA_POS + base] >> 4;
 		events[i].p = buf[FTS_TOUCH_PRE_POS + base];
 
-		/* Validate coordinates against display bounds from platform data.
-		 * Clamp out-of-bounds values to prevent ghost touches at edges.
-		 * Detect coordinate corruption (e.g., center touch -> edge) and trigger recovery. */
-		if (events[i].x > data->pdata->x_max) {
-			FTS_DEBUG("clamp x %d -> %d", events[i].x, data->pdata->x_max);
-			events[i].x = data->pdata->x_max;
-		}
-		if (events[i].y > data->pdata->y_max) {
-			FTS_DEBUG("clamp y %d -> %d", events[i].y, data->pdata->y_max);
-			events[i].y = data->pdata->y_max;
-		}
-		if (events[i].x < data->pdata->x_min) {
-			FTS_DEBUG("clamp x %d -> %d", events[i].x, data->pdata->x_min);
-			events[i].x = data->pdata->x_min;
-		}
-		if (events[i].y < data->pdata->y_min) {
-			FTS_DEBUG("clamp y %d -> %d", events[i].y, data->pdata->y_min);
-			events[i].y = data->pdata->y_min;
-		}
-
-		/* Detect coordinate corruption: touch near center reported at edge.
-		 * This indicates firmware state corruption (common after rotate/suspend). */
-		if (EVENT_DOWN(events[i].flag)) {
-			int center_x = (data->pdata->x_max + data->pdata->x_min) / 2;
-			int center_y = (data->pdata->y_max + data->pdata->y_min) / 2;
-			int dist_from_center = abs(events[i].x - center_x) + abs(events[i].y - center_y);
-			int max_dist = (data->pdata->x_max + data->pdata->y_max) / 2;
-
-			/* If touch is near center (within 15%) but reported at edge (85%+),
-			 * likely firmware state corruption. Trigger async recovery. */
-			if (dist_from_center < max_dist * 15 / 100 &&
-			    (events[i].x <= data->pdata->x_min + 50 || events[i].x >= data->pdata->x_max - 50 ||
-			     events[i].y <= data->pdata->y_min + 50 || events[i].y >= data->pdata->y_max - 50)) {
-				FTS_INFO("corrupt: center touch at edge (%d,%d), scheduling recovery",
-					 events[i].x, events[i].y);
-				/* Schedule FW recovery on event workqueue */
-				queue_work(data->event_wq, &data->fw_recovery_work);
-			}
-		}
-
 		if (EVENT_DOWN(events[i].flag) && (data->point_num == 0)) {
 			FTS_INFO("abnormal touch data from fw");
 			return -EIO;
@@ -966,53 +907,6 @@ static int fts_read_touchdata(struct fts_ts_data *data)
 	if (data->touch_point == 0) {
 		FTS_INFO("no touch point information");
 		return -EIO;
-	}
-
-	/* Detect stuck-axis collapse on X only. This is the landscape glitch:
-	 * every touch collapses to the left edge (X ~ 0 for all fingers) while
-	 * Y keeps spreading across the full screen.
-	 *
-	 * Constraints to avoid false positives on real game grips (two thumbs
-	 * at the bottom: X spans left+right wide but Y stays narrow near bottom):
-	 *  - only X collapse is checked, never Y (narrow Y = normal game grip)
-	 *  - the collapsed X band must sit at a physical edge (within EDGE_PX
-	 *    of x_min/x_max), since a collapsed-X glitch always reports near
-	 *    the left edge
-	 *  - at least 2 ACTIVE (DOWN/CONTACT) touches, spanning >50% of Y range
-	 *
-	 * UP events carry stale coordinates and must not affect the check. */
-	if (data->touch_point >= 2) {
-		int xmin = data->pdata->x_max, xmax = data->pdata->x_min;
-		int ymin = data->pdata->y_max, ymax = data->pdata->y_min;
-		int x_span, y_span, y_range;
-		int active_cnt = 0;
-		int edge_px;
-		int j;
-
-		for (j = 0; j < data->touch_point; j++) {
-			if (!EVENT_DOWN(events[j].flag))
-				continue;
-			active_cnt++;
-			if (events[j].x < xmin) xmin = events[j].x;
-			if (events[j].x > xmax) xmax = events[j].x;
-			if (events[j].y < ymin) ymin = events[j].y;
-			if (events[j].y > ymax) ymax = events[j].y;
-		}
-		x_span = xmax - xmin;
-		y_span = ymax - ymin;
-		y_range = data->pdata->y_max - data->pdata->y_min;
-		edge_px = (data->pdata->x_max - data->pdata->x_min) * 6 / 100;
-
-		if (active_cnt >= 2 &&
-		    x_span <= edge_px &&                 /* collapsed X band */
-		    (xmin <= data->pdata->x_min + 60 ||  /* at left edge */
-		     xmax >= data->pdata->x_max - 60) && /* or right edge */
-		    y_span >= y_range * 50 / 100) {      /* Y spans wide */
-			FTS_INFO("stuck-axis: %d active touches x[%d..%d] y[%d..%d], scheduling recovery",
-				 active_cnt, xmin, xmax, ymin, ymax);
-			queue_work(data->event_wq, &data->fw_recovery_work);
-			return -EIO;
-		}
 	}
 
 	return 0;
@@ -1973,7 +1867,6 @@ static int fts_ts_probe(struct i2c_client *client, const struct i2c_device_id *i
 	}
 	INIT_WORK(&ts_data->resume_work, fts_resume_work);
 	INIT_WORK(&ts_data->suspend_work, fts_suspend_work);
-	INIT_WORK(&ts_data->fw_recovery_work, fts_fw_recovery_work);
 #ifdef CONFIG_TOUCHSCREEN_FTS_POWER_SUPPLY
 	INIT_WORK(&ts_data->power_supply_work, fts_power_supply_work);
 	ts_data->is_usb_exist = -1;
@@ -2235,8 +2128,8 @@ static int fts_ts_resume(struct device *dev)
 	}
 #endif
 
-	fts_irq_enable();
 	ts_data->suspended = false;
+	fts_irq_enable();
 
 	FTS_FUNC_EXIT();
 	return 0;
@@ -2297,39 +2190,6 @@ static void fts_suspend_work(struct work_struct *work)
 	struct fts_ts_data *ts;
 	ts = container_of(work, struct fts_ts_data, suspend_work);
 	fts_ts_suspend(&ts->client->dev);
-}
-
-/*****************************************************************************
-*  Name: fts_fw_recovery_work
-*  Brief: Force hardware reset and state recovery when FW corruption is detected.
-*         Unlike resume_work, this is NOT gated by suspended state — it always
-*         executes a full reset to recover from corrupted firmware state.
-*  Input:
-*  Output:
-*  Return:
-*****************************************************************************/
-static void fts_fw_recovery_work(struct work_struct *work)
-{
-	struct fts_ts_data *ts;
-	ts = container_of(work, struct fts_ts_data, fw_recovery_work);
-
-	FTS_FUNC_ENTER();
-	if (ts->fw_recovering) {
-		FTS_INFO("FW recovery already in progress, skipping");
-		return;
-	}
-	ts->fw_recovering = true;
-
-	fts_irq_disable_sync();
-	fts_release_all_finger();
-
-	FTS_INFO("FW corruption detected - performing hardware reset");
-	fts_reset_proc(200);
-	fts_tp_state_recovery(ts->client);
-
-	fts_irq_enable();
-	ts->fw_recovering = false;
-	FTS_FUNC_EXIT();
 }
 
 
