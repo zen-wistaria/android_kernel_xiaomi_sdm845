@@ -24,6 +24,10 @@
 
 #include <asm/uaccess.h>
 
+#ifdef CONFIG_NOMOUNT
+extern int nomount_handle_iterate_dir(struct file *file, struct dir_context *ctx);
+#endif
+
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 extern int susfs_sus_ino_for_filldir64(unsigned long ino);
 #endif
@@ -53,10 +57,14 @@ int iterate_dir(struct file *file, struct dir_context *ctx)
 	res = -ENOENT;
 	if (!IS_DEADDIR(inode)) {
 		ctx->pos = file->f_pos;
+#ifdef CONFIG_NOMOUNT
+		res = nomount_handle_iterate_dir(file, ctx);
+#else
 		if (shared)
 			res = file->f_op->iterate_shared(file, ctx);
 		else
 			res = file->f_op->iterate(file, ctx);
+#endif
 		file->f_pos = ctx->pos;
 		fsnotify_access(file);
 		file_accessed(file);
